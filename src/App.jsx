@@ -13,30 +13,20 @@ function App() {
 
   const startSession = async () => {
     try {
-      setStatus('Using simulated stream...');
-
-      // 1. Create a fake canvas-based stream
-      const canvas = document.createElement('canvas');
-      canvas.width = 1280;
-      canvas.height = 720;
-      const ctx = canvas.getContext('2d');
-
-      // Draw something so you know it's working
-      ctx.fillStyle = 'blue';
-      ctx.fillRect(0, 0, 1280, 720);
-      ctx.fillStyle = 'white';
-      ctx.fillText('Fake Camera Stream', 50, 50);
-
-      // 2. Capture the stream from the canvas at 30fps
-      const stream = canvas.captureStream(30);
-
+      setStatus('Accessing camera...');
+      
+      // RESTORED: Real camera capture
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720 },
+        audio: false
+      });
+      
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-
+      
       setIsCalling(true);
-      setStatus('Connecting to backend...');
+      setStatus('Connecting...');
 
-      // Now WebRTC can use this "fake" stream exactly like a real one
       await webrtc.createSession(
         stream,
         (remoteStream) => {
@@ -63,7 +53,7 @@ function App() {
     }
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-
+    
     setIsCalling(false);
     setStatus('Disconnected');
   };
