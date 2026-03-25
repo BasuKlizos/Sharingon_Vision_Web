@@ -18,7 +18,7 @@ function App() {
       // RESTORED: Real camera capture
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720 },
-        audio: false
+        audio: true
       });
       
       localStreamRef.current = stream;
@@ -85,7 +85,7 @@ function App() {
         <main className="main">
           <div className="video-grid">
             <div className="video-card remote-card">
-              <video ref={remoteVideoRef} autoPlay playsInline muted></video>
+              <video ref={remoteVideoRef} autoPlay playsInline></video>
               <div className="label">🌐 Remote</div>
             </div>
             <div className="video-card local-card">
