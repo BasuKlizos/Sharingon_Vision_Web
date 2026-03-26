@@ -121,7 +121,7 @@
   position: absolute;
   bottom: 1rem;
   right: 1rem;
-  width: 250px;
+  width: 450px;
   aspect-ratio: 16/9;
   z-index: 10;
   box-shadow: 0 10px 15px rgba(0,0,0,0.5);
@@ -171,4 +171,131 @@ video { width: 100%; height: 100%; object-fit: cover; }
   font-weight: 600;
   color: white;
   z-index: 5;
+}
+
+/* Header Info Section */
+.header-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Detection Channel Status Indicator */
+.detection-channel-status {
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--glass-border);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.detection-channel-status.open {
+  color: #00ff96;
+  border-color: rgba(0, 255, 150, 0.4);
+  background: rgba(0, 255, 150, 0.05);
+}
+
+.detection-channel-status.open .indicator {
+  background: #00ff96;
+  box-shadow: 0 0 10px #00ff96;
+  animation: pulse-indicator 1s infinite;
+}
+
+.detection-channel-status.closed {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.4);
+}
+
+.detection-channel-status.closed .indicator {
+  background: #ff6b6b;
+  animation: none;
+}
+
+@keyframes pulse-indicator {
+  0%, 100% {
+    box-shadow: 0 0 10px #00ff96;
+  }
+  50% {
+    box-shadow: 0 0 20px #00ff96;
+  }
+}
+
+/* Detection Panel */
+.detection-panel {
+  margin-right: 50%;
+  position: absolute;
+  bottom: 2.5rem;
+  right: 1rem;
+  width: 320px;
+  max-height: 400px;
+  z-index: 20;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .glass-container {
+    width: 95%;
+    height: 95%;
+    padding: 1rem;
+  }
+
+  .local-card {
+    width: 150px;
+    bottom: 0.5rem;
+    right: 0.5rem;
+  }
+
+  .detection-panel {
+    width: 280px;
+    bottom: 5.5rem;
+    right: 0.5rem;
+    max-height: 300px;
+  }
+
+  .header {
+    flex-direction: column;
+    gap: 1rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .header-info {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .status,
+  .detection-channel-status {
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .detection-panel {
+    width: 100%;
+    max-height: 200px;
+    bottom: 5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+  }
+
+  .local-card {
+    width: 120px;
+  }
 }

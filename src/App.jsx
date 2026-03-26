@@ -1,24 +1,41 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 import { WebRTCService } from './services/webrtcService';
+import { DetectionCanvas, DetectionStats } from './components/DetectionCanvas';
 
 const webrtc = new WebRTCService();
 
 function App() {
   const [status, setStatus] = useState('Disconnected');
   const [isCalling, setIsCalling] = useState(false);
+  const [detectionFrame, setDetectionFrame] = useState(null);
+  const [detectionStats, setDetectionStats] = useState(null);
+  const [channelStatus, setChannelStatus] = useState('closed');
+  
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
+  const statsUpdateIntervalRef = useRef(null);
+
+  const handleDetectionsReceived = (frame) => {
+    setDetectionFrame(frame);
+  };
+
+  const updateStats = () => {
+    const stats = webrtc.getDetectionStats();
+    setDetectionStats(stats);
+    const manager = webrtc.getDetectionManager();
+    setChannelStatus(manager?.isChannelOpen() ? 'open' : 'closed');
+  };
 
   const startSession = async () => {
     try {
       setStatus('Accessing camera...');
       
-      // RESTORED: Real camera capture
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720 },
-        audio: true
+        // audio: true
+        audio: false
       });
       
       localStreamRef.current = stream;
@@ -33,11 +50,22 @@ function App() {
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
         },
         (state) => {
-          console.log('ICE State:', state);
-          if (state === 'connected') setStatus('Live');
-          if (state === 'failed' || state === 'closed') stopSession();
-        }
+          if (state === 'connected' || state === 'completed') {
+            setStatus('Live');
+          }
+          if (state === 'failed') {
+            setStatus('Connection Failed');
+          }
+        },
+        handleDetectionsReceived
       );
+
+      // Start stats update interval
+      if (statsUpdateIntervalRef.current) {
+        clearInterval(statsUpdateIntervalRef.current);
+      }
+      statsUpdateIntervalRef.current = setInterval(updateStats, 500);
+
     } catch (err) {
       console.error('Failed to start session:', err);
       alert('Error: ' + err.message);
@@ -47,6 +75,12 @@ function App() {
 
   const stopSession = () => {
     webrtc.stop();
+    
+    if (statsUpdateIntervalRef.current) {
+      clearInterval(statsUpdateIntervalRef.current);
+      statsUpdateIntervalRef.current = null;
+    }
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
@@ -54,6 +88,9 @@ function App() {
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     
+    setDetectionFrame(null);
+    setDetectionStats(null);
+    setChannelStatus('closed');
     setIsCalling(false);
     setStatus('Disconnected');
   };
@@ -76,9 +113,17 @@ function App() {
           <div className="logo">
             <h1>Vision<span>Web</span></h1>
           </div>
-          <div className={`status ${status === 'Live' ? 'live' : ''}`}>
-            <div className="indicator"></div>
-            <span>{status}</span>
+          <div className="header-info">
+            <div className={`status ${status === 'Live' ? 'live' : ''}`}>
+              <div className="indicator"></div>
+              <span>{status}</span>
+            </div>
+            {isCalling && (
+              <div className={`detection-channel-status ${channelStatus}`}>
+                <div className="indicator"></div>
+                <span>Detection: {channelStatus}</span>
+              </div>
+            )}
           </div>
         </header>
 
@@ -86,23 +131,38 @@ function App() {
           <div className="video-grid">
             <div className="video-card remote-card">
               <video ref={remoteVideoRef} autoPlay playsInline></video>
-              <div className="label">🌐 Remote</div>
+              <div className="label">Remote</div>
+              {detectionFrame && (
+                <DetectionCanvas 
+                  videoRef={remoteVideoRef} 
+                  detectionFrame={detectionFrame}
+                />
+              )}
             </div>
             <div className="video-card local-card">
               <video ref={localVideoRef} autoPlay playsInline muted></video>
-              <div className="label">👤 You</div>
+              <div className="label">You</div>
             </div>
           </div>
+
+          {isCalling && (
+            <div className="detection-panel">
+              <DetectionStats 
+                detectionFrame={detectionFrame} 
+                stats={detectionStats}
+              />
+            </div>
+          )}
         </main>
 
         <footer className="controls">
           {!isCalling ? (
             <button className="btn btn-primary" onClick={startSession}>
-              <span>▶</span> Start Session
+              Start Session
             </button>
           ) : (
             <button className="btn btn-danger" onClick={stopSession}>
-              <span>⏹</span> End Session
+              End Session
             </button>
           )}
         </footer>
