@@ -37,7 +37,7 @@ export function DetectionCanvas({ videoRef, detectionFrame, videoWidth = 1280, v
 
         // Draw each detection
         detectionFrame.detections.forEach((detection, index) => {
-            drawBoundingBox(ctx, detection, scaleX, scaleY, index);
+            drawCenterCircle(ctx, detection, scaleX, scaleY, index);
         });
 
         // Draw frame info
@@ -54,10 +54,7 @@ export function DetectionCanvas({ videoRef, detectionFrame, videoWidth = 1280, v
     );
 }
 
-/**
- * Draw bounding box with label
- */
-function drawBoundingBox(ctx, detection, scaleX, scaleY, index) {
+function drawCenterCircle(ctx, detection, scaleX, scaleY, index) {
     const { bbox, class_name, confidence } = detection;
 
     // Scale coordinates
@@ -66,30 +63,49 @@ function drawBoundingBox(ctx, detection, scaleX, scaleY, index) {
     const x2 = bbox.x2 * scaleX;
     const y2 = bbox.y2 * scaleY;
 
+    // Calculate center point and radius based on bounding box width/height
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    
+    // Determine a reasonable radius (half the average of width and height, or max)
     const width = x2 - x1;
     const height = y2 - y1;
+    const radius = Math.max(width, height) / 2;
 
-    // Color based on confidence - red for low, yellow for medium, green for high
+    // Color based on confidence
     const color = getColorForConfidence(confidence);
 
-    // Draw border
+    // Draw circle
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
-    ctx.strokeRect(x1, y1, width, height);
+    ctx.stroke();
 
-    // Draw filled background for label
+    // Optionally draw a subtle fill for the circle
+    ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
+    // If it's a hex color, we can't do the simple replace easily without a hex-to-rgba converter,
+    // so let's just use standard globalAlpha
+    ctx.globalAlpha = 0.2;
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+
+    // Draw filled background for label above the circle
     const label = `${class_name} ${(confidence * 100).toFixed(1)}%`;
     const fontSize = 14;
     ctx.font = `bold ${fontSize}px Arial`;
     const textMetrics = ctx.measureText(label);
     const textHeight = fontSize + 4;
 
+    const labelX = cx - textMetrics.width / 2 - 4;
+    const labelY = cy - radius - 10;
+
     ctx.fillStyle = color;
-    ctx.fillRect(x1, y1 - textHeight, textMetrics.width + 8, textHeight);
+    ctx.fillRect(labelX, labelY - textHeight, textMetrics.width + 8, textHeight);
 
     // Draw label text
     ctx.fillStyle = '#fff';
-    ctx.fillText(label, x1 + 4, y1 - 4);
+    ctx.fillText(label, labelX + 4, labelY - 4);
 }
 
 /**

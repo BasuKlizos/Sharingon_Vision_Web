@@ -129,20 +129,18 @@ function App() {
 
         <main className="main">
           <div className="video-grid">
-            <div className="video-card remote-card">
-              <video ref={remoteVideoRef} autoPlay playsInline></video>
-              <div className="label">Remote</div>
+            <div className="video-card main-card">
+              <video ref={localVideoRef} autoPlay playsInline muted></video>
+              <div className="label">Local Feed + AI Detections</div>
               {detectionFrame && (
                 <DetectionCanvas 
-                  videoRef={remoteVideoRef} 
+                  videoRef={localVideoRef} 
                   detectionFrame={detectionFrame}
                 />
               )}
             </div>
-            <div className="video-card local-card">
-              <video ref={localVideoRef} autoPlay playsInline muted></video>
-              <div className="label">You</div>
-            </div>
+            {/* Keeping a hidden remote ref so webrtcService doesn't break if it expects one */}
+            <video ref={remoteVideoRef} style={{ display: 'none' }} autoPlay playsInline></video>
           </div>
 
           {isCalling && (
