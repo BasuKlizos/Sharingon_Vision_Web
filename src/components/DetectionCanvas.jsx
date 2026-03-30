@@ -3,149 +3,150 @@ import './DetectionCanvas.css';
 
 /**
  * DetectionCanvas Component
- * Renders bounding boxes and detection info on a canvas overlay
+ * Renders detection circles on a canvas overlay, correctly accounting
+ * for the video element's object-fit: cover cropping.
  */
-export function DetectionCanvas({ videoRef, detectionFrame, videoWidth = 1280, videoHeight = 720 }) {
+export function DetectionCanvas({ videoRef, detectionFrame }) {
     const canvasRef = useRef(null);
 
     useEffect(() => {
-        if (!canvasRef.current || !detectionFrame || !detectionFrame.detections) {
+        const canvas = canvasRef.current;
+        const videoElement = videoRef?.current;
+
+        if (!canvas || !videoElement || !detectionFrame?.detections) {
             return;
         }
 
-        const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
 
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // ── Step 1: Size the canvas to the CONTAINER display dimensions ──────
+        // object-fit on <canvas> has no effect, so we manage pixels manually.
+        const containerW = videoElement.clientWidth;
+        const containerH = videoElement.clientHeight;
 
-        // Set canvas size to match video
-        if (canvas.width !== videoWidth || canvas.height !== videoHeight) {
-            canvas.width = videoWidth;
-            canvas.height = videoHeight;
+        if (canvas.width !== containerW || canvas.height !== containerH) {
+            canvas.width = containerW;
+            canvas.height = containerH;
         }
 
-        // Get scale factors (in case video is displayed at different size)
-        const videoElement = videoRef?.current;
-        let scaleX = 1;
-        let scaleY = 1;
+        ctx.clearRect(0, 0, containerW, containerH);
 
-        if (videoElement && videoElement.videoWidth) {
-            scaleX = videoElement.clientWidth / videoElement.videoWidth;
-            scaleY = videoElement.clientHeight / videoElement.videoHeight;
-        }
+        const videoW = videoElement.videoWidth;
+        const videoH = videoElement.videoHeight;
 
-        // Draw each detection
+        if (!videoW || !videoH) return;
+
+        // ── Step 2: Reproduce object-fit: cover math ─────────────────────────
+        // The browser picks the LARGER of the two ratios so the source fills
+        // the container, then crops the axis that overflows.
+        const scale = Math.max(containerW / videoW, containerH / videoH);
+
+        // After scaling, the rendered video dimensions:
+        const renderedW = videoW * scale;
+        const renderedH = videoH * scale;
+
+        // The crop offset (negative = the portion that is hidden):
+        const offsetX = (containerW - renderedW) / 2;
+        const offsetY = (containerH - renderedH) / 2;
+
+        // ── Step 3: Draw each detection using transformed coordinates ────────
         detectionFrame.detections.forEach((detection, index) => {
-            drawCenterCircle(ctx, detection, scaleX, scaleY, index);
+            drawCenterCircle(ctx, detection, scale, offsetX, offsetY, index);
         });
 
-        // Draw frame info
-        drawFrameInfo(ctx, detectionFrame, canvas.width, canvas.height);
-    }, [detectionFrame, videoRef, videoWidth, videoHeight]);
+        drawFrameInfo(ctx, detectionFrame, containerW, containerH);
+
+    }, [detectionFrame, videoRef]);
 
     return (
         <canvas
             ref={canvasRef}
             className="detection-canvas"
-            width={videoWidth}
-            height={videoHeight}
         />
     );
 }
 
-function drawCenterCircle(ctx, detection, scaleX, scaleY, index) {
+/**
+ * Draw a circle around the detected object with a label.
+ * Coordinates come from the backend in video-source space;
+ * we map them into container-display space using the cover transform.
+ */
+function drawCenterCircle(ctx, detection, scale, offsetX, offsetY, index) {
     const { bbox, class_name, confidence } = detection;
 
-    // Scale coordinates
-    const x1 = bbox.x1 * scaleX;
-    const y1 = bbox.y1 * scaleY;
-    const x2 = bbox.x2 * scaleX;
-    const y2 = bbox.y2 * scaleY;
+    // Map bounding box from video-source space → display space
+    const x1 = bbox.x1 * scale + offsetX;
+    const y1 = bbox.y1 * scale + offsetY;
+    const x2 = bbox.x2 * scale + offsetX;
+    const y2 = bbox.y2 * scale + offsetY;
 
-    // Calculate center point and radius based on bounding box width/height
     const cx = (x1 + x2) / 2;
     const cy = (y1 + y2) / 2;
-    
-    // Determine a reasonable radius (half the average of width and height, or max)
-    const width = x2 - x1;
-    const height = y2 - y1;
-    const radius = Math.max(width, height) / 2;
+    const radius = Math.max(x2 - x1, y2 - y1) / 2;
 
-    // Color based on confidence
     const color = getColorForConfidence(confidence);
 
-    // Draw circle
+    // Stroke circle
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    // Optionally draw a subtle fill for the circle
-    ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
-    // If it's a hex color, we can't do the simple replace easily without a hex-to-rgba converter,
-    // so let's just use standard globalAlpha
-    ctx.globalAlpha = 0.2;
+    // Subtle fill
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = color;
     ctx.fill();
     ctx.globalAlpha = 1.0;
 
-    // Draw filled background for label above the circle
+    // Label pill above the circle
     const label = `${class_name} ${(confidence * 100).toFixed(1)}%`;
-    const fontSize = 14;
-    ctx.font = `bold ${fontSize}px Arial`;
-    const textMetrics = ctx.measureText(label);
-    const textHeight = fontSize + 4;
-
-    const labelX = cx - textMetrics.width / 2 - 4;
-    const labelY = cy - radius - 10;
+    const fontSize = 13;
+    ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+    const tw = ctx.measureText(label).width;
+    const th = fontSize + 6;
+    const lx = cx - tw / 2 - 5;
+    const ly = cy - radius - 8;
 
     ctx.fillStyle = color;
-    ctx.fillRect(labelX, labelY - textHeight, textMetrics.width + 8, textHeight);
+    ctx.beginPath();
+    ctx.roundRect(lx, ly - th, tw + 10, th, 4);
+    ctx.fill();
 
-    // Draw label text
-    ctx.fillStyle = '#fff';
-    ctx.fillText(label, labelX + 4, labelY - 4);
+    ctx.fillStyle = '#000';
+    ctx.fillText(label, lx + 5, ly - 5);
 }
 
 /**
  * Get color based on confidence score
  */
 function getColorForConfidence(confidence) {
-    if (confidence >= 0.85) {
-        return '#00ff00'; // Green - high confidence
-    } else if (confidence >= 0.70) {
-        return '#ffff00'; // Yellow - medium confidence
-    } else if (confidence >= 0.50) {
-        return '#ff8800'; // Orange - lower confidence
-    } else {
-        return '#ff0000'; // Red - low confidence
-    }
+    if (confidence >= 0.85) return '#00ff00';
+    if (confidence >= 0.70) return '#ffff00';
+    if (confidence >= 0.50) return '#ff8800';
+    return '#ff4444';
 }
 
 /**
- * Draw frame info (frame_id, timestamp, count)
+ * Draw frame info overlay (bottom-left corner)
  */
 function drawFrameInfo(ctx, detectionFrame, canvasWidth, canvasHeight) {
-    const fontSize = 16;
-    ctx.font = `bold ${fontSize}px Arial`;
-    ctx.fillStyle = 'rgba(0, 200, 100, 0.8)';
+    const text = `Frame: ${detectionFrame.frame_id} | Objects: ${detectionFrame.detection_count}`;
+    const fontSize = 13;
+    ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+    const tw = ctx.measureText(text).width;
+    const pad = 8;
+    const bh = fontSize + pad * 2;
 
-    const infoText = `Frame: ${detectionFrame.frame_id} | Objects: ${detectionFrame.detection_count}`;
-    const metrics = ctx.measureText(infoText);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.beginPath();
+    ctx.roundRect(10, canvasHeight - bh - 10, tw + pad * 2, bh, 6);
+    ctx.fill();
 
-    // Draw background for info
-    ctx.fillRect(
-        10,
-        canvasHeight - 35,
-        metrics.width + 20,
-        30
-    );
-
-    // Draw text
-    ctx.fillStyle = '#fff';
-    ctx.fillText(infoText, 20, canvasHeight - 12);
+    ctx.fillStyle = '#00ff96';
+    ctx.fillText(text, 10 + pad, canvasHeight - 10 - pad / 2);
 }
+
 
 /**
  * DetectionStats Component
