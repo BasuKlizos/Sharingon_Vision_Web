@@ -15,15 +15,18 @@ export function DetectionCanvas({ videoRef, detectionFrame, videoWidth = 1280, v
 
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
+        const rect = videoRef.current.getBoundingClientRect();
 
         // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Set canvas size to match video
-        if (canvas.width !== videoWidth || canvas.height !== videoHeight) {
-            canvas.width = videoWidth;
-            canvas.height = videoHeight;
-        }
+        
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        // // Set canvas size to match video
+        // if (canvas.width !== videoWidth || canvas.height !== videoHeight) {
+        //     canvas.width = videoWidth;
+        //     canvas.height = videoHeight;
+        // }
 
         // Get scale factors (in case video is displayed at different size)
         const videoElement = videoRef?.current;
@@ -31,8 +34,8 @@ export function DetectionCanvas({ videoRef, detectionFrame, videoWidth = 1280, v
         let scaleY = 1;
 
         if (videoElement && videoElement.videoWidth) {
-            scaleX = videoElement.clientWidth / videoElement.videoWidth;
-            scaleY = videoElement.clientHeight / videoElement.videoHeight;
+            const scaleX = canvas.width / videoElement.videoWidth;
+            const scaleY = canvas.height / videoElement.videoHeight;
         }
 
         // Draw each detection

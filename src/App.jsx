@@ -1,55 +1,77 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 import { WebRTCService } from './services/webrtcService';
-import { DetectionCanvas, DetectionStats } from './components/DetectionCanvas';
+import { FaceCanvas } from "./components/mediapipe/FaceCanvas";
+import { DetectionCanvas } from './components/DetectionCanvas';
 
 const webrtc = new WebRTCService();
 
 function App() {
   const [status, setStatus] = useState('Disconnected');
   const [isCalling, setIsCalling] = useState(false);
-  const [detectionFrame, setDetectionFrame] = useState(null);
-  const [detectionStats, setDetectionStats] = useState(null);
+  const [detections, setDetections] = useState({
+    yolo: null,
+    face: null
+  });
   const [channelStatus, setChannelStatus] = useState('closed');
   
   const localVideoRef = useRef(null);
-  const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
   const statsUpdateIntervalRef = useRef(null);
 
-  const handleDetectionsReceived = (frame) => {
-    setDetectionFrame(frame);
-  };
+  const handleDetectionsReceived = (message) => {
+  console.log("App: Detection received:", message);
+
+  if (message.type === "yolo") {
+    setDetections(prev => ({
+      ...prev,
+      yolo: message
+    }));
+  } else if (message.type === "face_analysis") {
+    setDetections(prev => ({
+      ...prev,
+      face: message
+    }));
+  }
+};
 
   const updateStats = () => {
-    const stats = webrtc.getDetectionStats();
-    setDetectionStats(stats);
     const manager = webrtc.getDetectionManager();
-    setChannelStatus(manager?.isChannelOpen() ? 'open' : 'closed');
+    const isOpen = manager?.isChannelOpen() || false;
+    const currentStatus = isOpen ? 'open' : 'closed';
+    
+    if (currentStatus !== channelStatus) {
+      console.log("App: Data channel status changed to:", currentStatus);
+      setChannelStatus(currentStatus);
+    }
   };
 
   const startSession = async () => {
     try {
+      console.log("App: Requesting camera access");
       setStatus('Accessing camera...');
       
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720 },
-        // audio: true
         audio: false
       });
       
+      console.log("App: Camera stream acquired");
       localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
       
       setIsCalling(true);
       setStatus('Connecting...');
 
-      await webrtc.createSession(
+      // We use Promise.resolve to safely await even if createSession 
+      // is not explicitly returning a promise.
+      await Promise.resolve(webrtc.createSession(
         stream,
-        (remoteStream) => {
-          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
-        },
+        null, 
         (state) => {
+          console.log("App: Connection state update:", state);
           if (state === 'connected' || state === 'completed') {
             setStatus('Live');
           }
@@ -58,22 +80,20 @@ function App() {
           }
         },
         handleDetectionsReceived
-      );
+      ));
 
-      // Start stats update interval
-      if (statsUpdateIntervalRef.current) {
-        clearInterval(statsUpdateIntervalRef.current);
-      }
+      console.log("App: Session initialization complete");
       statsUpdateIntervalRef.current = setInterval(updateStats, 500);
 
     } catch (err) {
-      console.error('Failed to start session:', err);
+      console.error('App: Session start error:', err);
       alert('Error: ' + err.message);
       stopSession();
     }
   };
 
   const stopSession = () => {
+    console.log("App: Cleaning up session");
     webrtc.stop();
     
     if (statsUpdateIntervalRef.current) {
@@ -85,11 +105,15 @@ function App() {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
     }
-    if (localVideoRef.current) localVideoRef.current.srcObject = null;
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     
-    setDetectionFrame(null);
-    setDetectionStats(null);
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    
+    setDetections({
+      yolo: null,
+      face: null
+    });
     setChannelStatus('closed');
     setIsCalling(false);
     setStatus('Disconnected');
@@ -97,6 +121,7 @@ function App() {
 
   useEffect(() => {
     return () => {
+      console.log("App: Component unmounting");
       stopSession();
     };
   }, []);
@@ -128,31 +153,26 @@ function App() {
         </header>
 
         <main className="main">
-          <div className="video-grid">
-            <div className="video-card remote-card">
-              <video ref={remoteVideoRef} autoPlay playsInline></video>
-              <div className="label">Remote</div>
-              {detectionFrame && (
-                <DetectionCanvas 
-                  videoRef={remoteVideoRef} 
-                  detectionFrame={detectionFrame}
-                />
-              )}
-            </div>
-            <div className="video-card local-card">
-              <video ref={localVideoRef} autoPlay playsInline muted></video>
-              <div className="label">You</div>
-            </div>
-          </div>
+          <div className="video-card single-video" style={{ position: 'relative', overflow: 'hidden' }}>
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ width: '100%', display: 'block', borderRadius: '12px' }}
+            />
+            {/* YOLO BOUNDING BOX */}
+            <DetectionCanvas
+              videoRef={localVideoRef}
+              detectionFrame={detections.yolo}
+            />
 
-          {isCalling && (
-            <div className="detection-panel">
-              <DetectionStats 
-                detectionFrame={detectionFrame} 
-                stats={detectionStats}
-              />
-            </div>
-          )}
+            {/* MEDIAPIPE FACE */}
+            <FaceCanvas
+              videoRef={localVideoRef}
+              data={detections.face}
+            />
+          </div>
         </main>
 
         <footer className="controls">

@@ -1,9 +1,7 @@
 /**
- * DetectionDataManager
- * Handles receiving and parsing YOLO detection data from backend
- * via WebRTC data channel
+ * Universal DetectionDataManager
+ * Handles both Mediapipe (Face) and YOLO detection data
  */
-
 export class DetectionDataManager {
     constructor(onDetectionsReceived) {
         this.dataChannel = null;
@@ -13,69 +11,86 @@ export class DetectionDataManager {
     }
 
     /**
+     * Checks if the WebRTC data channel is currently open
+     */
+    isChannelOpen() {
+        return this.isOpen && this.dataChannel?.readyState === 'open';
+    }
+
+    /**
      * Initialize detection data channel
-     * @param {RTCPeerConnection} peerConnection - WebRTC peer connection
      */
     setupDataChannel(peerConnection) {
-        // Listen for incoming data channels
         peerConnection.ondatachannel = (event) => {
-            if (event.channel.label === 'detections') {
-                this.attachDataChannel(event.channel);
-            } else {
-                console.warn('Data channel label mismatch:', event.channel.label);
-            }
+            console.log("DataManager: Remote channel detected:", event.channel.label);
+            // Accept 'detections' or generic labels to stay flexible
+            this.attachDataChannel(event.channel);
         };
     }
 
     /**
      * Attach event listeners to data channel
-     * @param {RTCDataChannel} channel - The data channel
      */
     attachDataChannel(channel) {
         this.dataChannel = channel;
 
         this.dataChannel.onopen = () => {
+            console.log("DataManager: Data channel opened");
             this.isOpen = true;
         };
 
         this.dataChannel.onclose = () => {
+            console.log("DataManager: Data channel closed");
             this.isOpen = false;
+            this.dataChannel = null;
         };
 
         this.dataChannel.onerror = (error) => {
-            console.error('Data channel error:', error);
+            console.error("DataManager: Data channel error:", error);
         };
 
         this.dataChannel.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                this.handleDetectionFrame(data);
+                
+                // ROUTING LOGIC:
+                // If it has 'detections' array, it's YOLO.
+                // If it's 'face_analysis' or similar, it's Mediapipe.
+                if (data.detections && Array.isArray(data.detections)) {
+                    this.handleYOLOFrame(data);
+                } else {
+                    this.handleGenericFrame(data);
+                }
             } catch (error) {
-                console.error('Failed to parse detection message:', error);
+                console.error("DataManager: Failed to parse message:", error);
             }
         };
     }
 
     /**
-     * Process incoming detection frame
-     * @param {Object} data - Parsed detection frame from backend
+     * Logic for Mediapipe / Generic data
      */
-    handleDetectionFrame(data) {
-        // Validate frame structure
-        if (!data.frame_id || !Array.isArray(data.detections)) {
-            return;
+    handleGenericFrame(data) {
+        if (this.onDetectionsReceived) {
+            this.onDetectionsReceived(data);
         }
+    }
 
-        // Parse detections
+    /**
+     * Logic for YOLO data (includes mapping and buffering)
+     */
+    handleYOLOFrame(data) {
+        if (!data.frame_id) return;
+
         const detections = data.detections.map(det => ({
             class_id: det.class_id,
             class_name: det.class_name,
             confidence: det.confidence,
             bbox: {
-                x1: det.bounding_box.x1,
-                y1: det.bounding_box.y1,
-                x2: det.bounding_box.x2,
-                y2: det.bounding_box.y2
+                x1: det.bounding_box?.x1 || det.bbox?.x1,
+                y1: det.bounding_box?.y1 || det.bbox?.y1,
+                x2: det.bounding_box?.x2 || det.bbox?.x2,
+                y2: det.bounding_box?.y2 || det.bbox?.y2
             }
         }));
 
@@ -83,49 +98,31 @@ export class DetectionDataManager {
             frame_id: data.frame_id,
             timestamp: data.timestamp,
             detection_count: data.detection_count || detections.length,
-            detections: detections
+            detections: detections,
+            type: "yolo" // Explicitly mark as yolo
         };
 
-
-
-        // Add to buffer with timestamp
+        // Update buffer for stats calculation
         this.frameBuffer.push({
             ...detectionFrame,
             received_at: Date.now()
         });
 
-        // Keep only last 30 frames in buffer
         if (this.frameBuffer.length > 30) {
             this.frameBuffer.shift();
         }
 
-        // Invoke callback
         if (this.onDetectionsReceived) {
             this.onDetectionsReceived(detectionFrame);
         }
     }
 
     /**
-     * Get latest detections
-     * @returns {Object|null} Latest detection frame
-     */
-    getLatestDetections() {
-        return this.frameBuffer.length > 0 
-            ? this.frameBuffer[this.frameBuffer.length - 1] 
-            : null;
-    }
-
-    /**
-     * Get detection statistics
-     * @returns {Object} Statistics about received detections
+     * Statistics helper for the UI
      */
     getStats() {
         if (this.frameBuffer.length === 0) {
-            return {
-                frames_received: 0,
-                total_detections: 0,
-                classes: {}
-            };
+            return { frames_received: 0, total_detections: 0, classes: {} };
         }
 
         const allDetections = this.frameBuffer.flatMap(f => f.detections);
@@ -133,22 +130,16 @@ export class DetectionDataManager {
 
         allDetections.forEach(det => {
             if (!classes[det.class_name]) {
-                classes[det.class_name] = {
-                    count: 0,
-                    avg_confidence: 0,
-                    confidences: []
-                };
+                classes[det.class_name] = { count: 0, avg_confidence: 0, confs: [] };
             }
             classes[det.class_name].count++;
-            classes[det.class_name].confidences.push(det.confidence);
+            classes[det.class_name].confs.push(det.confidence);
         });
 
-        // Calculate averages
-        Object.keys(classes).forEach(className => {
-            const confidences = classes[className].confidences;
-            classes[className].avg_confidence = 
-                confidences.reduce((a, b) => a + b, 0) / confidences.length;
-            delete classes[className].confidences;
+        Object.keys(classes).forEach(name => {
+            const c = classes[name];
+            c.avg_confidence = c.confs.reduce((a, b) => a + b, 0) / c.confs.length;
+            delete c.confs;
         });
 
         return {
@@ -158,18 +149,11 @@ export class DetectionDataManager {
         };
     }
 
-    /**
-     * Clear frame buffer
-     */
-    clearBuffer() {
-        this.frameBuffer = [];
+    getLatestDetections() {
+        return this.frameBuffer.length > 0 ? this.frameBuffer[this.frameBuffer.length - 1] : null;
     }
 
-    /**
-     * Check if data channel is open
-     * @returns {boolean}
-     */
-    isChannelOpen() {
-        return this.isOpen && this.dataChannel?.readyState === 'open';
+    clearBuffer() {
+        this.frameBuffer = [];
     }
 }
