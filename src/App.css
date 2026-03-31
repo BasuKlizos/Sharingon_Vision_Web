@@ -128,15 +128,30 @@
 }
 
 .single-video {
-  width: 100%;
-  height: 100%;
-  position: relative;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background: #000;
+    border-radius: 1.5rem;
+    overflow: hidden;
 }
 
 .single-video video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+    width: 100%;
+    height: 100%;
+    /* FIX: 'contain' ensures the full video frame is visible and matches data */
+    object-fit: contain; 
+    display: block;
+}
+
+.detection-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* Allows clicking the video under the canvas */
+    z-index: 10;
 }
 
 video { width: 100%; height: 100%; object-fit: cover; }

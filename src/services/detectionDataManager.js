@@ -54,12 +54,12 @@ export class DetectionDataManager {
                 const data = JSON.parse(event.data);
                 
                 // ROUTING LOGIC:
-                // If it has 'detections' array, it's YOLO.
-                // If it's 'face_analysis' or similar, it's Mediapipe.
-                if (data.detections && Array.isArray(data.detections)) {
-                    this.handleYOLOFrame(data);
-                } else {
-                    this.handleGenericFrame(data);
+                if (!data.type) {
+                    console.warn("Unknown message format", data);
+                    return;
+                }
+                if (data.type === "detection_frame") {
+                    this.handleUnifiedFrame(data);
                 }
             } catch (error) {
                 console.error("DataManager: Failed to parse message:", error);
@@ -67,53 +67,50 @@ export class DetectionDataManager {
         };
     }
 
-    /**
-     * Logic for Mediapipe / Generic data
-     */
-    handleGenericFrame(data) {
-        if (this.onDetectionsReceived) {
-            this.onDetectionsReceived(data);
-        }
-    }
+    handleUnifiedFrame(data) {
+        // 1. Extract core frame data
+        const { frame_id, timestamp, yolo, face } = data;
 
-    /**
-     * Logic for YOLO data (includes mapping and buffering)
-     */
-    handleYOLOFrame(data) {
-        if (!data.frame_id) return;
+        // 2. Map YOLO detections safely
+        const processedDetections = (yolo?.detections || []).map(det => {
+            // Fallback logic: find where the coordinates live
+            // In your JSON, they are in det.bbox
+            const coords = det.bbox || det.bounding_box || det;
 
-        const detections = data.detections.map(det => ({
-            class_id: det.class_id,
-            class_name: det.class_name,
-            confidence: det.confidence,
-            bbox: {
-                x1: det.bounding_box?.x1 || det.bbox?.x1,
-                y1: det.bounding_box?.y1 || det.bbox?.y1,
-                x2: det.bounding_box?.x2 || det.bbox?.x2,
-                y2: det.bounding_box?.y2 || det.bbox?.y2
-            }
-        }));
-
-        const detectionFrame = {
-            frame_id: data.frame_id,
-            timestamp: data.timestamp,
-            detection_count: data.detection_count || detections.length,
-            detections: detections,
-            type: "yolo" // Explicitly mark as yolo
-        };
-
-        // Update buffer for stats calculation
-        this.frameBuffer.push({
-            ...detectionFrame,
-            received_at: Date.now()
+            return {
+                class_id: det.class_id,
+                class_name: det.class_name,
+                confidence: det.confidence,
+                bbox: {
+                    x1: coords.x1 ?? 0,
+                    y1: coords.y1 ?? 0,
+                    x2: coords.x2 ?? 0,
+                    y2: coords.y2 ?? 0
+                }
+            };
         });
 
+        const frame = {
+            frame_id,
+            timestamp,
+            yolo: {
+                detection_count: yolo?.detection_count || 0,
+                detections: processedDetections
+            },
+            face: face || { alerts: [], faces: [], face_count: 0 },
+            type: "detection_frame",
+            received_at: Date.now()
+        };
+
+        // 3. Buffer Management (FIFO)
+        this.frameBuffer.push(frame);
         if (this.frameBuffer.length > 30) {
             this.frameBuffer.shift();
         }
 
+        // 4. Callback
         if (this.onDetectionsReceived) {
-            this.onDetectionsReceived(detectionFrame);
+            this.onDetectionsReceived(frame);
         }
     }
 
@@ -125,7 +122,7 @@ export class DetectionDataManager {
             return { frames_received: 0, total_detections: 0, classes: {} };
         }
 
-        const allDetections = this.frameBuffer.flatMap(f => f.detections);
+        const allDetections = this.frameBuffer.flatMap(f => f.yolo?.detections || []);
         const classes = {};
 
         allDetections.forEach(det => {

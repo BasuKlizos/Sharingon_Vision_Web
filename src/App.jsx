@@ -20,20 +20,15 @@ function App() {
   const statsUpdateIntervalRef = useRef(null);
 
   const handleDetectionsReceived = (message) => {
-  console.log("App: Detection received:", message);
+    console.log("App: Detection received:", message);
 
-  if (message.type === "yolo") {
-    setDetections(prev => ({
-      ...prev,
-      yolo: message
-    }));
-  } else if (message.type === "face_analysis") {
-    setDetections(prev => ({
-      ...prev,
-      face: message
-    }));
-  }
-};
+    if (message.type === "detection_frame") {
+      setDetections({
+        yolo: message, // FIX: Pass the whole message to match your JSON structure
+        face: message.face
+      });
+    }
+  };
 
   const updateStats = () => {
     const manager = webrtc.getDetectionManager();
@@ -52,9 +47,20 @@ function App() {
       setStatus('Accessing camera...');
       
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 15, max: 20 }
+        },
         audio: false
       });
+      const track = stream.getVideoTracks()[0];
+      await track.applyConstraints({
+        frameRate: { ideal: 12, max: 15 }
+      });
+      const settings = track.getSettings();
+
+      console.log("🎥 Actual Camera Settings:", settings);
       
       console.log("App: Camera stream acquired");
       localStreamRef.current = stream;
@@ -153,13 +159,12 @@ function App() {
         </header>
 
         <main className="main">
-          <div className="video-card single-video" style={{ position: 'relative', overflow: 'hidden' }}>
+          <div className="video-card single-video">
             <video
               ref={localVideoRef}
               autoPlay
               playsInline
               muted
-              style={{ width: '100%', display: 'block', borderRadius: '12px' }}
             />
             {/* YOLO BOUNDING BOX */}
             <DetectionCanvas
