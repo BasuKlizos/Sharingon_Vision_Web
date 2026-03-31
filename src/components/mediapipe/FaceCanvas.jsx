@@ -11,20 +11,35 @@ export function FaceCanvas({ videoRef, data }) {
 
     const ctx = canvas.getContext("2d");
     
-    // Match canvas display size to video display size
-    const rect = video.getBoundingClientRect();
-    if (canvas.width !== rect.width || canvas.height !== rect.height) {
-      canvas.width = rect.width;
-      canvas.height = rect.height;
-    }
+    // Use offsetWidth/offsetHeight for accurate canvas sizing
+    const displayWidth = video.offsetWidth;
+    const displayHeight = video.offsetHeight;
+    
+    // Set canvas internal resolution to match display size
+    canvas.width = displayWidth;
+    canvas.height = displayHeight;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (!data || data.type !== "face_analysis") return;
+    if (!data) return;
 
-    const faceData = data.data;
-    const scaleX = canvas.width / video.videoWidth;
-    const scaleY = canvas.height / video.videoHeight;
+    // Handle both face_analysis and detection_frame data structures
+    const faceData = data.data || data.face;
+    const cropOffset = data.crop_offset;
+    
+    if (!faceData) return;
+
+    // Calculate scale factors
+    // If crop_offset exists, use original dimensions; otherwise use video dimensions
+    const videoWidth = cropOffset?.original_width || video.videoWidth;
+    const videoHeight = cropOffset?.original_height || video.videoHeight;
+    
+    const scaleX = canvas.width / videoWidth;
+    const scaleY = canvas.height / videoHeight;
+
+    // Apply crop offset for coordinate transformation
+    const offsetX = cropOffset?.x_offset || 0;
+    const offsetY = cropOffset?.y_offset || 0;
 
     // Draw Face Markers
     if (faceData.faces) {
@@ -32,8 +47,12 @@ export function FaceCanvas({ videoRef, data }) {
         if (!face.nose_px) return;
         
         const [x, y] = face.nose_px;
-        const drawX = x * scaleX;
-        const drawY = y * scaleY;
+        // Apply crop offset to coordinates
+        const x_original = x + offsetX;
+        const y_original = y + offsetY;
+        
+        const drawX = x_original * scaleX;
+        const drawY = y_original * scaleY;
 
         ctx.beginPath();
         ctx.arc(drawX, drawY, 8, 0, 2 * Math.PI);
@@ -74,10 +93,9 @@ export function FaceCanvas({ videoRef, data }) {
         position: "absolute",
         top: 0,
         left: 0,
-        width: "100%",
-        height: "100%",
         pointerEvents: "none",
-        zIndex: 20
+        zIndex: 20,
+        display: "block"
       }}
     />
   );

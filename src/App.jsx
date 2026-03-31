@@ -20,11 +20,13 @@ function App() {
   const statsUpdateIntervalRef = useRef(null);
 
   const handleDetectionsReceived = (message) => {
-    console.log("App: Detection received:", message);
+    // console.log("App: Detection received:", message);
 
     if (message.type === "detection_frame") {
+      // Correctly structure the detection data
+      // message contains: { type, frame_id, timestamp, yolo: {...}, face: {...} }
       setDetections({
-        yolo: message, // FIX: Pass the whole message to match your JSON structure
+        yolo: message,  // Pass entire message which contains yolo and frame metadata
         face: message.face
       });
     }
@@ -50,13 +52,15 @@ function App() {
         video: {
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          frameRate: { ideal: 15, max: 20 }
+          // frameRate: { ideal: 15, max: 20 }
+          frameRate: { ideal: 8, max: 12 }
         },
         audio: false
       });
       const track = stream.getVideoTracks()[0];
       await track.applyConstraints({
-        frameRate: { ideal: 12, max: 15 }
+        // frameRate: { ideal: 12, max: 15 }
+        frameRate: { ideal: 6, max: 10 }
       });
       const settings = track.getSettings();
 
