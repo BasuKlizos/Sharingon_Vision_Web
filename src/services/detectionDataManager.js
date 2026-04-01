@@ -3,11 +3,13 @@
  * Handles both Mediapipe (Face) and YOLO detection data
  */
 export class DetectionDataManager {
+    dataChannel = null;
+    onDetectionsReceived = null;
+    frameBuffer = [];
+    isOpen = false;
+
     constructor(onDetectionsReceived) {
-        this.dataChannel = null;
         this.onDetectionsReceived = onDetectionsReceived;
-        this.frameBuffer = [];
-        this.isOpen = false;
     }
 
     /**
@@ -148,7 +150,7 @@ export class DetectionDataManager {
     }
 
     getLatestDetections() {
-        return this.frameBuffer.length > 0 ? this.frameBuffer[this.frameBuffer.length - 1] : null;
+        return this.frameBuffer.at(-1) ?? null;
     }
 
     clearBuffer() {

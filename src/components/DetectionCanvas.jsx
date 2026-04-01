@@ -247,7 +247,10 @@ function getColorForConfidence(conf) {
 }
 
 function drawFrameInfo(ctx, frame, w, h) {
-    ctx.fillStyle = 'rgba(0, 255, 150, 0.7)';
+    // High-contrast overlay for accessibility
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(8, h - 24, 70, 18);
+    ctx.fillStyle = '#ffffff';
     ctx.font = '12px monospace';
     ctx.fillText(`ID: ${frame.frame_id}`, 10, h - 10);
 }
@@ -299,4 +302,15 @@ export function DetectionStats({ detectionFrame, stats }) {
 DetectionCanvas.propTypes = {
     videoRef: PropTypes.object.isRequired,
     detectionFrame: PropTypes.object
+};
+
+DetectionStats.propTypes = {
+    detectionFrame: PropTypes.shape({
+        frame_id: PropTypes.number,
+        timestamp: PropTypes.number,
+        yolo: PropTypes.shape({
+            detection_count: PropTypes.number
+        })
+    }),
+    stats: PropTypes.object
 };

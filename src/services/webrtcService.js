@@ -2,10 +2,8 @@ import { webrtcApi } from '../api/webrtcApi';
 import { DetectionDataManager } from './detectionDataManager';
 
 export class WebRTCService {
-        constructor() {
-            this.pc = null;
-            this.detectionManager = null;
-        }
+        pc = null;
+        detectionManager = null;
 
         /**
          * Create WebRTC session with detection support

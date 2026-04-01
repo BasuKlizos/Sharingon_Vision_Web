@@ -20,8 +20,6 @@ function App() {
   const statsUpdateIntervalRef = useRef(null);
 
   const handleDetectionsReceived = (message) => {
-    // console.log("App: Detection received:", message);
-
     if (message.type === "detection_frame") {
       // Correctly structure the detection data
       // message contains: { type, frame_id, timestamp, yolo: {...}, face: {...} }
@@ -188,13 +186,13 @@ function App() {
         </main>
 
         <footer className="controls">
-          {!isCalling ? (
-            <button className="btn btn-primary" onClick={startSession}>
-              Start Session
-            </button>
-          ) : (
+          {isCalling ? (
             <button className="btn btn-danger" onClick={stopSession}>
               End Session
+            </button>
+          ) : (
+            <button className="btn btn-primary" onClick={startSession}>
+              Start Session
             </button>
           )}
         </footer>
