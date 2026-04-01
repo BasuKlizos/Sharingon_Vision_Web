@@ -36,14 +36,12 @@ function App() {
     const currentStatus = isOpen ? 'open' : 'closed';
     
     if (currentStatus !== channelStatus) {
-      console.log("App: Data channel status changed to:", currentStatus);
       setChannelStatus(currentStatus);
     }
   };
 
   const startSession = async () => {
     try {
-      console.log("App: Requesting camera access");
       setStatus('Accessing camera...');
       
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -57,14 +55,10 @@ function App() {
       });
       const track = stream.getVideoTracks()[0];
       await track.applyConstraints({
-        // frameRate: { ideal: 12, max: 15 }
-        frameRate: { ideal: 6, max: 10 }
+      //   // frameRate: { ideal: 12, max: 15 }
+        // frameRate: { ideal: 6, max: 10 }
       });
       const settings = track.getSettings();
-
-      console.log("🎥 Actual Camera Settings:", settings);
-      
-      console.log("App: Camera stream acquired");
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
@@ -79,7 +73,6 @@ function App() {
         stream,
         null, 
         (state) => {
-          console.log("App: Connection state update:", state);
           if (state === 'connected' || state === 'completed') {
             setStatus('Live');
           }
@@ -90,18 +83,15 @@ function App() {
         handleDetectionsReceived
       ));
 
-      console.log("App: Session initialization complete");
       statsUpdateIntervalRef.current = setInterval(updateStats, 500);
 
     } catch (err) {
-      console.error('App: Session start error:', err);
       alert('Error: ' + err.message);
       stopSession();
     }
   };
 
   const stopSession = () => {
-    console.log("App: Cleaning up session");
     webrtc.stop();
     
     if (statsUpdateIntervalRef.current) {
@@ -129,7 +119,6 @@ function App() {
 
   useEffect(() => {
     return () => {
-      console.log("App: Component unmounting");
       stopSession();
     };
   }, []);

@@ -24,16 +24,7 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
             return;
         }
 
-        // Debug: Log actual detection structure and crop offset
-        if (detections.length > 0) {
-            console.log('[DetectionCanvas] FULL detection frame:', JSON.stringify(detectionFrame, null, 2));
-            console.log('[DetectionCanvas] First detection structure:', JSON.stringify(detections[0], null, 2));
-            if (cropOffset) {
-                console.log('[DetectionCanvas] ✅ Crop offset found:', JSON.stringify(cropOffset, null, 2));
-            } else {
-                console.warn('[DetectionCanvas] ⚠️ NO CROP OFFSET FOUND - backend not sending crop_offset data');
-            }
-        }
+
 
         const ctx = canvas.getContext('2d');
 
@@ -80,8 +71,6 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
 
             const scaleX = actualRenderWidth / videoWidth;
             const scaleY = actualRenderHeight / videoHeight;
-
-            console.log(`[DetectionCanvas] Render: ${actualRenderWidth.toFixed(0)}x${actualRenderHeight.toFixed(0)} at (${offsetX_render.toFixed(0)}, ${offsetY_render.toFixed(0)})`);
 
             // Apply Basic NMS: Filter out overlapping boxes of the same area (dog vs person issue)
             const filteredDetections = filterOverlappingDetections(detections);
@@ -218,7 +207,6 @@ function drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY, renderX = 0
 
     // Skip invalid boxes
     if (width <= 0 || height <= 0) {
-        console.warn(`[DetectionCanvas] Invalid bbox dimensions for ${class_name}:`, { width, height });
         return;
     }
 
