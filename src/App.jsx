@@ -179,7 +179,10 @@ function App() {
             {/* MEDIAPIPE FACE */}
             <FaceCanvas
               videoRef={localVideoRef}
-              data={detections.face}
+              data={{
+                ...detections.face,
+                crop_offset: detections.yolo?.crop_offset || detections.face?.crop_offset
+              }}
             />
           </div>
         </main>

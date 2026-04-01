@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from "react";
+import PropTypes from 'prop-types';
 
 export function FaceCanvas({ videoRef, data }) {
   const canvasRef = useRef(null);
@@ -23,10 +24,19 @@ export function FaceCanvas({ videoRef, data }) {
 
     if (!data) return;
 
-    // Handle both face_analysis and detection_frame data structures
-    const faceData = data.data || data.face;
-    const cropOffset = data.crop_offset;
-    
+    // Handle both face_analysis and detection_frame data structures.
+    // App may pass only the `face` object, or full frame object with `face` nested.
+    let faceData = null;
+    if (data?.faces) {
+      faceData = data;
+    } else if (data?.data?.faces) {
+      faceData = data.data;
+    } else if (data?.face?.faces) {
+      faceData = data.face;
+    }
+
+    const cropOffset = faceData?.crop_offset || null;
+
     if (!faceData) return;
 
     // Calculate scale factors
@@ -44,9 +54,18 @@ export function FaceCanvas({ videoRef, data }) {
     // Draw Face Markers
     if (faceData.faces) {
       faceData.faces.forEach((face, i) => {
-        if (!face.nose_px) return;
-        
-        const [x, y] = face.nose_px;
+        let coord = null;
+
+        if (face.nose_px?.length === 2) coord = face.nose_px;
+        else if (face.eye_px?.length === 2) coord = face.eye_px;
+        else if (face.eye_norm?.length === 2) {
+          // fallback: normalized coordinates if provided (0..1)
+          coord = [face.eye_norm[0] * videoWidth, face.eye_norm[1] * videoHeight];
+        }
+
+        if (!coord) return;
+
+        const [x, y] = coord;
         // Apply crop offset to coordinates
         const x_original = x + offsetX;
         const y_original = y + offsetY;
@@ -100,3 +119,56 @@ export function FaceCanvas({ videoRef, data }) {
     />
   );
 }
+
+FaceCanvas.propTypes = {
+  videoRef: PropTypes.shape({
+    current: PropTypes.shape({
+      videoWidth: PropTypes.number,
+      videoHeight: PropTypes.number,
+      offsetWidth: PropTypes.number,
+      offsetHeight: PropTypes.number
+    })
+  }).isRequired,
+  data: PropTypes.shape({
+    crop_offset: PropTypes.shape({
+      x_offset: PropTypes.number,
+      y_offset: PropTypes.number,
+      original_width: PropTypes.number,
+      original_height: PropTypes.number,
+      cropped_width: PropTypes.number,
+      cropped_height: PropTypes.number
+    }),
+    face: PropTypes.shape({
+      alerts: PropTypes.arrayOf(PropTypes.string),
+      face_count: PropTypes.number,
+      faces: PropTypes.arrayOf(
+        PropTypes.shape({
+          looking_away: PropTypes.bool,
+          eye_norm: PropTypes.arrayOf(PropTypes.number),
+          eye_px: PropTypes.arrayOf(PropTypes.number),
+          nose_px: PropTypes.arrayOf(PropTypes.number)
+        })
+      )
+    }),
+    data: PropTypes.shape({
+      alerts: PropTypes.arrayOf(PropTypes.string),
+      face_count: PropTypes.number,
+      faces: PropTypes.arrayOf(
+        PropTypes.shape({
+          looking_away: PropTypes.bool,
+          eye_norm: PropTypes.arrayOf(PropTypes.number),
+          eye_px: PropTypes.arrayOf(PropTypes.number),
+          nose_px: PropTypes.arrayOf(PropTypes.number)
+        })
+      )
+    }),
+    faces: PropTypes.arrayOf(
+      PropTypes.shape({
+        looking_away: PropTypes.bool,
+        eye_norm: PropTypes.arrayOf(PropTypes.number),
+        eye_px: PropTypes.arrayOf(PropTypes.number),
+        nose_px: PropTypes.arrayOf(PropTypes.number)
+      })
+    )
+  })
+};
