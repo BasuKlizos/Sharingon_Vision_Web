@@ -36,12 +36,12 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
         }
 
         const ctx = canvas.getContext('2d');
-        
+
         // Use offsetWidth/offsetHeight for accurate canvas sizing
         // This accounts for the actual displayed size in the DOM
         const canvasDisplayWidth = video.offsetWidth;
         const canvasDisplayHeight = video.offsetHeight;
-        
+
         // Set canvas internal resolution to match display size
         // This is critical: canvas.width/height sets rendering resolution
         canvas.width = canvasDisplayWidth;
@@ -53,23 +53,41 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Calculate scale factors based on original video dimensions
-        // If crop_offset exists, use original_width/height; otherwise use videoWidth/videoHeight
+        // Calculate scale factors and offsets based on video vs canvas aspect ratio
         const videoWidth = cropOffset?.original_width || video.videoWidth;
         const videoHeight = cropOffset?.original_height || video.videoHeight;
-        
-        if (videoWidth > 0 && videoHeight > 0) {
-            const scaleX = canvasDisplayWidth / videoWidth;
-            const scaleY = canvasDisplayHeight / videoHeight;
 
-            // Debug logging for coordinate verification
-            console.log(`[DetectionCanvas] Video original: ${videoWidth}x${videoHeight}, Canvas display: ${canvasDisplayWidth}x${canvasDisplayHeight}, Scale: ${scaleX.toFixed(3)}x${scaleY.toFixed(3)}`);
-            if (cropOffset) {
-                console.log(`[DetectionCanvas] Crop offset applied: x_offset=${cropOffset.x_offset}, y_offset=${cropOffset.y_offset}`);
+        if (videoWidth > 0 && videoHeight > 0 && canvasDisplayWidth > 0 && canvasDisplayHeight > 0) {
+            // Logic to calculate actual rendered video dimensions (handling 'contain')
+            const videoRatio = videoWidth / videoHeight;
+            const canvasRatio = canvasDisplayWidth / canvasDisplayHeight;
+
+            let actualRenderWidth, actualRenderHeight;
+            let offsetX_render = 0;
+            let offsetY_render = 0;
+
+            if (videoRatio > canvasRatio) {
+                // Video is wider than canvas - pillarboxed (bars on top/bottom)
+                actualRenderWidth = canvasDisplayWidth;
+                actualRenderHeight = canvasDisplayWidth / videoRatio;
+                offsetY_render = (canvasDisplayHeight - actualRenderHeight) / 2;
+            } else {
+                // Video is taller than canvas - letterboxed (bars on sides)
+                actualRenderWidth = canvasDisplayHeight * videoRatio;
+                actualRenderHeight = canvasDisplayHeight;
+                offsetX_render = (canvasDisplayWidth - actualRenderWidth) / 2;
             }
 
-            detections.forEach((detection) => {
-                drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY);
+            const scaleX = actualRenderWidth / videoWidth;
+            const scaleY = actualRenderHeight / videoHeight;
+
+            console.log(`[DetectionCanvas] Render: ${actualRenderWidth.toFixed(0)}x${actualRenderHeight.toFixed(0)} at (${offsetX_render.toFixed(0)}, ${offsetY_render.toFixed(0)})`);
+
+            // Apply Basic NMS: Filter out overlapping boxes of the same area (dog vs person issue)
+            const filteredDetections = filterOverlappingDetections(detections);
+
+            filteredDetections.forEach((detection) => {
+                drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY, offsetX_render, offsetY_render);
             });
         }
 
@@ -82,6 +100,44 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
             className="detection-canvas"
         />
     );
+}
+
+/**
+ * Filter highly overlapping detections (simple NMS)
+ */
+function filterOverlappingDetections(detections) {
+    if (detections.length <= 1) return detections;
+
+    // Sort by confidence descending
+    const sorted = [...detections].sort((a, b) => b.confidence - a.confidence);
+    const kept = [];
+
+    sorted.forEach(current => {
+        let isDuplicate = false;
+        for (const existing of kept) {
+            const iou = calculateIOU(current.bbox, existing.bbox);
+            if (iou > 0.7) { // 70% overlap threshold
+                isDuplicate = true;
+                break;
+            }
+        }
+        if (!isDuplicate) kept.push(current);
+    });
+
+    return kept;
+}
+
+function calculateIOU(boxA, boxB) {
+    const xA = Math.max(boxA.x1, boxB.x1);
+    const yA = Math.max(boxA.y1, boxB.y1);
+    const xB = Math.min(boxA.x2, boxB.x2);
+    const yB = Math.min(boxA.y2, boxB.y2);
+
+    const interArea = Math.max(0, xB - xA + 1) * Math.max(0, yB - yA + 1);
+    const boxAArea = (boxA.x2 - boxA.x1 + 1) * (boxA.y2 - boxA.y1 + 1);
+    const boxBArea = (boxB.x2 - boxB.x1 + 1) * (boxB.y2 - boxB.y1 + 1);
+
+    return interArea / (boxAArea + boxBArea - interArea);
 }
 
 // Fixes: validate proper YOLO detection data structure
@@ -128,52 +184,41 @@ DetectionCanvas.propTypes = {
  * @param {number} scaleX - Horizontal scale factor
  * @param {number} scaleY - Vertical scale factor
  */
-function drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY) {
+function drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY, renderX = 0, renderY = 0) {
     const { bbox, class_name, confidence } = detection;
-    
-    if (!bbox) {
-        console.warn('[DetectionCanvas] Missing bbox in detection:', detection);
-        return;
-    }
+
+    if (!bbox) return;
 
     // Get coordinates from bbox structure: x1, y1, x2, y2
-    const { x1, y1, x2, y2 } = bbox;
+    let { x1, y1, x2, y2 } = bbox;
 
-    if (typeof x1 !== 'number' || typeof y1 !== 'number' || typeof x2 !== 'number' || typeof y2 !== 'number') {
-        console.warn('[DetectionCanvas] Invalid bounding box coordinates:', bbox);
-        return;
-    }
+    // CORRECTED LOGIC: 
+    // Coordinates from YOLO are in cropped image space (0 to cropped_width/height)
+    // We need to:
+    // 1. Map them back to original frame coordinates by adding crop offset
+    // 2. Then scale to canvas display size
 
-    // DEBUG: Log raw detection coordinates
-    console.log(`[BoxDebug] ${class_name}: Raw bbox from detection = (${x1}, ${y1}, ${x2}, ${y2})`);
-
-    // Apply crop offset to get coordinates in original video frame
-    // The backend detections are relative to the cropped frame, so we add the offset
     const offsetX = cropOffset?.x_offset || 0;
     const offsetY = cropOffset?.y_offset || 0;
-    
-    console.log(`[BoxDebug] ${class_name}: Crop offset = x_offset:${offsetX}, y_offset:${offsetY}`);
-    
+
+    // Transform from cropped space to original frame space
     const x1_original = x1 + offsetX;
     const y1_original = y1 + offsetY;
     const x2_original = x2 + offsetX;
     const y2_original = y2 + offsetY;
 
-    console.log(`[BoxDebug] ${class_name}: After offset = (${x1_original}, ${y1_original}, ${x2_original}, ${y2_original})`);
-
-    // Scale coordinates from video dimensions to canvas dimensions
-    const scaledX1 = x1_original * scaleX;
-    const scaledY1 = y1_original * scaleY;
-    const scaledX2 = x2_original * scaleX;
-    const scaledY2 = y2_original * scaleY;
-
-    console.log(`[BoxDebug] ${class_name}: After scaling (${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}) = (${scaledX1.toFixed(0)}, ${scaledY1.toFixed(0)}, ${scaledX2.toFixed(0)}, ${scaledY2.toFixed(0)})`);
+    // Scale coordinates to the size of the rendered video
+    const scaledX1 = (x1_original * scaleX) + renderX;
+    const scaledY1 = (y1_original * scaleY) + renderY;
+    const scaledX2 = (x2_original * scaleX) + renderX;
+    const scaledY2 = (y2_original * scaleY) + renderY;
 
     const width = scaledX2 - scaledX1;
     const height = scaledY2 - scaledY1;
 
-    if (width < 0 || height < 0) {
-        console.warn('[DetectionCanvas] Invalid box dimensions:', { width, height, bbox });
+    // Skip invalid boxes
+    if (width <= 0 || height <= 0) {
+        console.warn(`[DetectionCanvas] Invalid bbox dimensions for ${class_name}:`, { width, height });
         return;
     }
 

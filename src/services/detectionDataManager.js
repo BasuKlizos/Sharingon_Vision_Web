@@ -69,7 +69,7 @@ export class DetectionDataManager {
 
     handleUnifiedFrame(data) {
         // 1. Extract core frame data
-        const { frame_id, timestamp, yolo, face } = data;
+        const { frame_id, timestamp, yolo, face, crop_offset } = data;
 
         // 2. Map YOLO detections safely
         const processedDetections = (yolo?.detections || []).map(det => {
@@ -93,6 +93,7 @@ export class DetectionDataManager {
         const frame = {
             frame_id,
             timestamp,
+            crop_offset: crop_offset || null, // Preserve cropping metadata
             yolo: {
                 detection_count: yolo?.detection_count || 0,
                 detections: processedDetections
