@@ -54,6 +54,33 @@ export function FaceCanvas({ videoRef, data }) {
         const drawX = x_original * scaleX;
         const drawY = y_original * scaleY;
 
+        // 1. Draw Gaze Vector if eye_direction is available
+        const eye_dir = face.eye_direction || 0;
+        const head_yaw = face.head_yaw || 0;
+        
+        // Draw Head Direction Vector (White/Blue)
+        ctx.beginPath();
+        ctx.moveTo(drawX, drawY);
+        const headX = drawX + Math.sin(head_yaw) * 60;
+        const headY = drawY - Math.cos(head_yaw) * 20; // Slight tilt
+        ctx.lineTo(headX, headY);
+        ctx.strokeStyle = "#40a9ff";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Draw Eye Gaze Vector (Red/Orange)
+        ctx.beginPath();
+        ctx.moveTo(drawX, drawY);
+        const gazeX = drawX + Math.sin(eye_dir) * 100;
+        const gazeY = drawY - Math.cos(eye_dir) * 30;
+        ctx.lineTo(gazeX, gazeY);
+        ctx.strokeStyle = face.eye_head_mismatch ? "#ff4d4f" : "#52c41a";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([5, 5]); // Dashed for gaze
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset
+
+        // 2. Draw Face Center Point
         ctx.beginPath();
         ctx.arc(drawX, drawY, 8, 0, 2 * Math.PI);
         ctx.fillStyle = face.looking_away ? "#ff4d4d" : "#00ff00";
@@ -62,9 +89,10 @@ export function FaceCanvas({ videoRef, data }) {
         ctx.fill();
         ctx.shadowBlur = 0; // Reset shadow for text
 
+        // 3. Label
         ctx.fillStyle = "#fff";
         ctx.font = "bold 14px Inter, sans-serif";
-        ctx.fillText(`Face ${i + 1}`, drawX + 12, drawY + 4);
+        ctx.fillText(`Face ${i + 1} ${face.eye_head_mismatch ? '⚠️ Mismatch' : ''}`, drawX + 12, drawY + 4);
       });
     }
 

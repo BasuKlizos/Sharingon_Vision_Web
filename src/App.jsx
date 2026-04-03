@@ -3,6 +3,7 @@ import './App.css';
 import { WebRTCService } from './services/webrtcService';
 import { FaceCanvas } from "./components/mediapipe/FaceCanvas";
 import { DetectionCanvas } from './components/DetectionCanvas';
+import { FaceAnalysisPanel } from './components/mediapipe/FaceAnalysisPanel';
 
 const webrtc = new WebRTCService();
 
@@ -62,11 +63,6 @@ function App() {
         // frameRate: { ideal: 12, max: 15 }
         frameRate: { ideal: 6, max: 10 }
       });
-      const settings = track.getSettings();
-
-      console.log("🎥 Actual Camera Settings:", settings);
-      
-      console.log("App: Camera stream acquired");
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
@@ -181,6 +177,18 @@ function App() {
               videoRef={localVideoRef}
               data={detections.face}
             />
+
+            {/* FACE ANALYSIS PANEL */}
+            {detections.yolo && (
+              <FaceAnalysisPanel 
+                faceData={{
+                  ...detections.face,
+                  person_count: detections.yolo?.person_count,
+                  face_count: detections.yolo?.face_count,
+                  crop_offset: detections.yolo?.crop_offset || detections.face?.crop_offset
+                }} 
+              />
+            )}
           </div>
         </main>
 
