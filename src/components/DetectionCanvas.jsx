@@ -49,34 +49,31 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
         const videoHeight = cropOffset?.original_height || video.videoHeight;
 
         if (videoWidth > 0 && videoHeight > 0 && canvasDisplayWidth > 0 && canvasDisplayHeight > 0) {
-            // Logic to calculate actual rendered video dimensions (handling 'contain')
+            // Direct scale: canvas display size divided by source video dimensions
+            // This handles the 'contain' object-fit properly
+            const scaleX = canvasDisplayWidth / videoWidth;
+            const scaleY = canvasDisplayHeight / videoHeight;
+
+            // For 'contain' object-fit, calculate actual rendered dimensions and offsets
             const videoRatio = videoWidth / videoHeight;
             const canvasRatio = canvasDisplayWidth / canvasDisplayHeight;
 
-            let actualRenderWidth, actualRenderHeight;
-            let offsetX_render = 0;
-            let offsetY_render = 0;
+            let renderX = 0;
+            let renderY = 0;
 
             if (videoRatio > canvasRatio) {
                 // Video is wider than canvas - pillarboxed (bars on top/bottom)
-                actualRenderWidth = canvasDisplayWidth;
-                actualRenderHeight = canvasDisplayWidth / videoRatio;
-                offsetY_render = (canvasDisplayHeight - actualRenderHeight) / 2;
+                renderY = (canvasDisplayHeight - (canvasDisplayWidth / videoRatio)) / 2;
             } else {
                 // Video is taller than canvas - letterboxed (bars on sides)
-                actualRenderWidth = canvasDisplayHeight * videoRatio;
-                actualRenderHeight = canvasDisplayHeight;
-                offsetX_render = (canvasDisplayWidth - actualRenderWidth) / 2;
+                renderX = (canvasDisplayWidth - (canvasDisplayHeight * videoRatio)) / 2;
             }
 
-            const scaleX = actualRenderWidth / videoWidth;
-            const scaleY = actualRenderHeight / videoHeight;
-
-            // Apply Basic NMS: Filter out overlapping boxes of the same area (dog vs person issue)
+            // Apply Basic NMS: Filter out overlapping boxes of the same area
             const filteredDetections = filterOverlappingDetections(detections);
 
             filteredDetections.forEach((detection) => {
-                drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY, offsetX_render, offsetY_render);
+                drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY, renderX, renderY);
             });
         }
 
@@ -181,22 +178,14 @@ function drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY, renderX = 0
     // Get coordinates from bbox structure: x1, y1, x2, y2
     let { x1, y1, x2, y2 } = bbox;
 
-    // CORRECTED LOGIC: 
-    // Coordinates from YOLO are in cropped image space (0 to cropped_width/height)
-    // We need to:
-    // 1. Map them back to original frame coordinates by adding crop offset
-    // 2. Then scale to canvas display size
+    // Backend already applies crop_offset to YOLO coords (if any), so bbox is in original frame coordinates.
+    // Avoid applying crop offset again in frontend to prevent duplicate translation.
+    const x1_original = x1;
+    const y1_original = y1;
+    const x2_original = x2;
+    const y2_original = y2;
 
-    const offsetX = cropOffset?.x_offset || 0;
-    const offsetY = cropOffset?.y_offset || 0;
-
-    // Transform from cropped space to original frame space
-    const x1_original = x1 + offsetX;
-    const y1_original = y1 + offsetY;
-    const x2_original = x2 + offsetX;
-    const y2_original = y2 + offsetY;
-
-    // Scale coordinates to the size of the rendered video
+    // Scale coordinates to the size of the rendered video on canvas
     const scaledX1 = (x1_original * scaleX) + renderX;
     const scaledY1 = (y1_original * scaleY) + renderY;
     const scaledX2 = (x2_original * scaleX) + renderX;

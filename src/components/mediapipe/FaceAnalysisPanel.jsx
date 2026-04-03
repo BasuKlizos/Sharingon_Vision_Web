@@ -34,8 +34,12 @@ export function FaceAnalysisPanel({ faceData }) {
     return 'Centered';
   };
 
+  const statusText = !hasFace ? 'No Face Detected' : (looking_away ? 'Looking Away' : 'Attentive');
+  const statusColor = !hasFace ? '#64748b' : (looking_away ? '#f97316' : '#10b981');
+
   return (
     <div className="face-analysis-panel">
+      <div className="panel-title">Face Analysis</div>
       <div className="simple-stats">
         <div className="stat-line">People: <span className="stat-value">{personCount}</span></div>
         <div className="stat-line">Faces: <span className="stat-value">{faceCount}</span></div>
@@ -44,7 +48,13 @@ export function FaceAnalysisPanel({ faceData }) {
         <div className="stat-line">Velocity: <span className="stat-value">{hasFace ? (head_velocity || 0).toFixed(3) : '---'}</span></div>
         <div className="stat-line">Attention: <span className="stat-value">{eye_head_mismatch ? 'Mismatch' : 'Aligned'}</span></div>
         <div className="stat-line">Centered: <span className="stat-value">{center_counter || 0}s</span></div>
-        <div className="stat-line">Status: <span className="stat-value">{!hasFace ? 'No Face' : (looking_away ? 'Away' : 'Attentive')}</span></div>
+        <div className="stat-line">
+          Status: 
+          <span className="stat-value status-pill" style={{ backgroundColor: statusColor }}>
+            {statusText}
+          </span>
+        </div>
+        <div className="stat-line">Pose: <span className="stat-value">{getYawStatus(head_yaw)}</span></div>
       </div>
     </div>
   );

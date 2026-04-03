@@ -321,6 +321,60 @@ video {
   }
 }
 
+/* Face Analysis Panel */
+.face-analysis-panel {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  width: 250px;
+  background: rgba(10, 2, 2, 0.596);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 1rem;
+  /* backdrop-filter: blur(px); */
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+  z-index: 30;
+  padding: 0.85rem;
+  color: var(--text-main);
+}
+
+.face-analysis-panel .panel-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.face-analysis-panel .simple-stats {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+}
+
+.face-analysis-panel .stat-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: #e2e8f0;
+}
+
+.face-analysis-panel .stat-value {
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.face-analysis-panel .status-pill {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #0f172a;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+}
+
 /* Detection Panel */
 .detection-panel {
   margin-right: 50%;
@@ -397,49 +451,12 @@ video {
   }
 }
 
-/* Face Analysis Panel styles */
-.face-analysis-panel {
-  position: absolute;
-  top: 1.5rem;
-  right: 1.5rem;
-  width: auto;
-  background: transparent;
-  backdrop-filter: none;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  z-index: 100;
-  color: var(--text-main);
-  box-shadow: none;
-}
-
-.simple-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-family: monospace;
-  font-size: 0.85rem;
-  line-height: 1.3;
-}
-
-.stat-line {
-  color: rgba(255, 255, 255, 0.8);
-  font-weight: 500;
-}
-
-.stat-value {
-  color: #10b981;
-  font-weight: 700;
-  margin-left: 0.25rem;
-}
-
 @keyframes slide-in-right {
   from { transform: translateX(50px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
 
-.panel-header {
-  display: flex;
+.panel-header {  display: flex;
   flex-direction: column;
   gap: 0.5rem;
   margin-bottom: 1rem;
@@ -623,6 +640,7 @@ video {
 
 @media (max-width: 1024px) {
   .face-analysis-panel {
+    background-color: #475569;
     width: 280px;
     padding: 1rem;
   }
