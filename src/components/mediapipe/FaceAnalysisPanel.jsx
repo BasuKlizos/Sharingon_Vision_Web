@@ -18,6 +18,7 @@ export function FaceAnalysisPanel({ faceData }) {
 
   // New detection counts from backend
   const personCount = faceData.person_count || 0;
+  const deviceCount = faceData.device_count || 0;
   const faceCount = faceData.face_count || (hasFace ? faceData.faces.length : 0);
   const isMultiplePersons = personCount > 1;
 
@@ -42,6 +43,7 @@ export function FaceAnalysisPanel({ faceData }) {
       <div className="panel-title">Face Analysis</div>
       <div className="simple-stats">
         <div className="stat-line">People: <span className="stat-value">{personCount}</span></div>
+        <div className="stat-line">Devices: <span className="stat-value">{deviceCount}</span></div>
         <div className="stat-line">Faces: <span className="stat-value">{faceCount}</span></div>
         <div className="stat-line">Yaw: <span className="stat-value">{hasFace ? (head_yaw || 0).toFixed(2) : '---'}</span></div>
         <div className="stat-line">Movement: <span className="stat-value">{hasFace ? (head_turning ? 'Turning' : 'Stable') : '---'}</span></div>
@@ -54,7 +56,7 @@ export function FaceAnalysisPanel({ faceData }) {
             {statusText}
           </span>
         </div>
-        <div className="stat-line">Pose: <span className="stat-value">{getYawStatus(head_yaw)}</span></div>
+        <div className="stat-line">Pose: <span className="stat-value">{getYawStatus(head_yaw)}</span></div>i
       </div>
     </div>
   );
