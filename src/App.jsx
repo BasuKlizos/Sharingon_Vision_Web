@@ -61,7 +61,7 @@ function App() {
       });
       const settings = track.getSettings();
 
-      console.log("🎥 Actual Camera Settings:", settings);
+      // console.log("🎥 Actual Camera Settings:", settings);
       
       console.log("App: Camera stream acquired");
       localStreamRef.current = stream;
