@@ -7,7 +7,6 @@ export function FaceAnalysisPanel({ faceData }) {
   // Extract the first face's metrics if available
   const hasFace = faceData.faces && faceData.faces.length > 0;
   const face = hasFace ? faceData.faces[0] : (faceData.nose_px ? faceData : null);
-
   const {
     head_yaw = 0,
     head_velocity = 0,
@@ -36,74 +35,16 @@ export function FaceAnalysisPanel({ faceData }) {
   };
 
   return (
-    <div className="face-analysis-panel glass-morphism">
-      <div className="panel-header">
-        <h3>Live Analysis</h3>
-        <div className="badge-group">
-          <div className={`badge ${!hasFace ? '' : (looking_away || eye_head_mismatch ? 'warning' : 'success')}`}>
-            {!hasFace ? 'Searching for Face...' : (looking_away ? 'Looking Away' : eye_head_mismatch ? 'Attention Mismatch' : 'Attentive')}
-          </div>
-          {isMultiplePersons && (
-            <div className="badge warning">
-              {personCount} Faces Detected
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="metrics-grid">
-        {/* Detection Card */}
-        <div className="metric-card centered highlight-card">
-          <span className="metric-label">Detections</span>
-          <div className="detection-counts">
-             <div className="count-item">
-               <span className="count-value">{personCount}</span>
-               <span className="count-label">Detected</span>
-             </div>
-             <div className="count-divider"></div>
-             <div className="count-item">
-               <span className="count-value">{faceCount}</span>
-               <span className="count-label">Analyzed</span>
-             </div>
-          </div>
-        </div>
-
-        <div className="metric-card centered">
-          <span className="metric-label">Head Yaw</span>
-          <div className="progress-container">
-            <div
-              className="progress-bar"
-              style={{
-                width: `${hasFace ? Math.min(Math.abs(head_yaw || 0) * 200, 100) : 0}%`,
-                backgroundColor: Math.abs(head_yaw || 0) > 0.3 ? 'var(--danger)' : 'var(--primary)'
-              }}
-            ></div>
-          </div>
-          <span className="value">
-            {hasFace ? `${getYawStatus(head_yaw)} (${(head_yaw || 0).toFixed(2)})` : '---'}
-          </span>
-        </div>
-
-        <div className="metric-card centered">
-          <span className="metric-label">Attention</span>
-          <div className="status-indicator">
-            <div className="indicator" style={{ backgroundColor: getStatusColor(eye_head_mismatch) }}></div>
-            <span className="value">{!hasFace ? '---' : (eye_head_mismatch ? 'Mismatched' : 'Aligned')}</span>
-          </div>
-        </div>
-
-        <div className="metric-card centered">
-          <span className="metric-label">Movement</span>
-          <span className="value">{!hasFace ? '---' : (head_turning ? 'Turning' : 'Stable')}</span>
-          <span className="sub-value">{hasFace ? `${(head_velocity || 0).toFixed(3)} V` : ''}</span>
-        </div>
-      </div>
-
-      <div className="panel-footer">
-        <div className="counter-item">
-          <span className="metric-label">Centered</span>
-          <span className="value">{center_counter || 0}s</span>
-        </div>
+    <div className="face-analysis-panel">
+      <div className="simple-stats">
+        <div className="stat-line">People: <span className="stat-value">{personCount}</span></div>
+        <div className="stat-line">Faces: <span className="stat-value">{faceCount}</span></div>
+        <div className="stat-line">Yaw: <span className="stat-value">{hasFace ? (head_yaw || 0).toFixed(2) : '---'}</span></div>
+        <div className="stat-line">Movement: <span className="stat-value">{hasFace ? (head_turning ? 'Turning' : 'Stable') : '---'}</span></div>
+        <div className="stat-line">Velocity: <span className="stat-value">{hasFace ? (head_velocity || 0).toFixed(3) : '---'}</span></div>
+        <div className="stat-line">Attention: <span className="stat-value">{eye_head_mismatch ? 'Mismatch' : 'Aligned'}</span></div>
+        <div className="stat-line">Centered: <span className="stat-value">{center_counter || 0}s</span></div>
+        <div className="stat-line">Status: <span className="stat-value">{!hasFace ? 'No Face' : (looking_away ? 'Away' : 'Attentive')}</span></div>
       </div>
     </div>
   );

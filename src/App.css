@@ -402,16 +402,35 @@ video {
   position: absolute;
   top: 1.5rem;
   right: 1.5rem;
-  width: 320px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(25px);
-  border: 1px solid var(--glass-border);
-  border-radius: 1.5rem;
-  padding: 1.5rem;
+  width: auto;
+  background: transparent;
+  backdrop-filter: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
   z-index: 100;
   color: var(--text-main);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-  animation: slide-in-right 0.4s ease-out;
+  box-shadow: none;
+}
+
+.simple-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.stat-line {
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.stat-value {
+  color: #10b981;
+  font-weight: 700;
+  margin-left: 0.25rem;
 }
 
 @keyframes slide-in-right {
@@ -422,17 +441,18 @@ video {
 .panel-header {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--glass-border);
-  padding-bottom: 1rem;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: none;
+  padding-bottom: 0.5rem;
 }
 
 .panel-header h3 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 0.85rem;
+  font-weight: 600;
   text-align: center;
+  opacity: 0.7;
 }
 
 .badge-group {
@@ -443,16 +463,16 @@ video {
 }
 
 .badge {
-  padding: 0.35rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.badge.success { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); }
-.badge.warning { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); animation: pulse-red 2s infinite; }
+.badge.success { background: transparent; color: #10b981; border: none; }
+.badge.warning { background: transparent; color: #ef4444; border: none; animation: pulse-red 2s infinite; }
 
 @keyframes pulse-red {
     0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
@@ -463,34 +483,35 @@ video {
 .metrics-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
 .metric-card {
   display: flex;
   flex-direction: column;
-  align-items: center; /* Centering */
+  align-items: center;
   text-align: center;
-  gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 0.75rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 0.25rem;
+  background: transparent;
+  padding: 0.5rem 0.25rem;
+  border-radius: 0.5rem;
+  border: none;
 }
 
 .metric-card.highlight-card {
     grid-column: span 2;
-    background: rgba(59, 130, 246, 0.1);
-    border-color: rgba(59, 130, 246, 0.3);
+    background: transparent;
+    border-color: transparent;
 }
 
 .metric-card .metric-label {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  font-weight: 600;
+  font-weight: 500;
+  opacity: 0.6;
 }
 
 .metric-card .value {
@@ -499,8 +520,9 @@ video {
 }
 
 .metric-card .sub-value {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   color: var(--text-muted);
+  opacity: 0.6;
 }
 
 .detection-counts {
@@ -529,16 +551,16 @@ video {
 
 .count-divider {
     width: 1px;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .progress-container {
   width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
   overflow: hidden;
-  margin: 0.25rem 0;
+  margin: 0.15rem 0;
 }
 
 .progress-bar {
@@ -550,7 +572,7 @@ video {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .status-indicator .indicator {
@@ -562,9 +584,9 @@ video {
 
 .panel-footer {
   display: flex;
-  justify-content: center; /* Center the single counter */
-  padding-top: 1rem;
-  border-top: 1px solid var(--glass-border);
+  justify-content: center;
+  padding-top: 0.5rem;
+  border-top: none;
   gap: 1rem;
 }
 

@@ -169,6 +169,7 @@ FaceCanvas.propTypes = {
     face: PropTypes.shape({
       alerts: PropTypes.arrayOf(PropTypes.string),
       face_count: PropTypes.number,
+      person_count: PropTypes.number,
       faces: PropTypes.arrayOf(
         PropTypes.shape({
           looking_away: PropTypes.bool,

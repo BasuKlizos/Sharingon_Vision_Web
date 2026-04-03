@@ -182,8 +182,6 @@ function App() {
               <FaceAnalysisPanel 
                 faceData={{
                   ...detections.face,
-                  person_count: detections.yolo?.person_count,
-                  face_count: detections.yolo?.face_count,
                   crop_offset: detections.yolo?.crop_offset || detections.face?.crop_offset
                 }} 
               />
