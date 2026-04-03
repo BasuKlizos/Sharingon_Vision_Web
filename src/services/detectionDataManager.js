@@ -3,11 +3,13 @@
  * Handles both Mediapipe (Face) and YOLO detection data
  */
 export class DetectionDataManager {
+    dataChannel = null;
+    onDetectionsReceived = null;
+    frameBuffer = [];
+    isOpen = false;
+
     constructor(onDetectionsReceived) {
-        this.dataChannel = null;
         this.onDetectionsReceived = onDetectionsReceived;
-        this.frameBuffer = [];
-        this.isOpen = false;
     }
 
     /**
@@ -22,7 +24,6 @@ export class DetectionDataManager {
      */
     setupDataChannel(peerConnection) {
         peerConnection.ondatachannel = (event) => {
-            console.log("DataManager: Remote channel detected:", event.channel.label);
             // Accept 'detections' or generic labels to stay flexible
             this.attachDataChannel(event.channel);
         };
@@ -35,18 +36,15 @@ export class DetectionDataManager {
         this.dataChannel = channel;
 
         this.dataChannel.onopen = () => {
-            console.log("DataManager: Data channel opened");
             this.isOpen = true;
         };
 
         this.dataChannel.onclose = () => {
-            console.log("DataManager: Data channel closed");
             this.isOpen = false;
             this.dataChannel = null;
         };
 
         this.dataChannel.onerror = (error) => {
-            console.error("DataManager: Data channel error:", error);
         };
 
         this.dataChannel.onmessage = (event) => {
@@ -55,14 +53,12 @@ export class DetectionDataManager {
                 
                 // ROUTING LOGIC:
                 if (!data.type) {
-                    console.warn("Unknown message format", data);
                     return;
                 }
                 if (data.type === "detection_frame") {
                     this.handleUnifiedFrame(data);
                 }
             } catch (error) {
-                console.error("DataManager: Failed to parse message:", error);
             }
         };
     }
@@ -148,7 +144,7 @@ export class DetectionDataManager {
     }
 
     getLatestDetections() {
-        return this.frameBuffer.length > 0 ? this.frameBuffer[this.frameBuffer.length - 1] : null;
+        return this.frameBuffer.at(-1) ?? null;
     }
 
     clearBuffer() {

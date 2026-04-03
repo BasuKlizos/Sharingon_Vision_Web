@@ -104,13 +104,15 @@
   padding: 0.5rem 1rem;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--glass-border);
   font-size: 0.8rem;
+  color: var(--text-main);
   color: var(--text-main);
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 0 4px rgba(0,0,0,0.4);
 }
 
 .status.live {
