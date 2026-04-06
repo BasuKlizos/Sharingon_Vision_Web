@@ -34,7 +34,7 @@ export class WebRTCService {
 
             // 🔥 IMPORTANT: create DataChannel HERE (correct place)
             const detectionChannel = this.pc.createDataChannel("detections");
-
+            console.log("detectionChannel", detectionChannel);
             this.detectionManager.attachDataChannel(detectionChannel);
             this.detectionManager.setupDataChannel(this.pc);
 
@@ -45,6 +45,7 @@ export class WebRTCService {
             };
 
             this.pc.ontrack = (event) => {
+                console.log("event", event);
                 if (onTrack && event.streams[0]) {
                     onTrack(event.streams[0]);
                 }

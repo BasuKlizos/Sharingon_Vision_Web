@@ -29,6 +29,7 @@ function App() {
         face: message.face
       });
     }
+    console.log("message", message);
   };
 
   const updateStats = () => {
