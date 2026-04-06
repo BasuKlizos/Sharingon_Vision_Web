@@ -21,7 +21,7 @@ export class WebRTCService {
         ) {
             const config = {
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, {
-                    urls: "free.expressturn.com:3478",
+                    urls: "turn:free.expressturn.com:3478",
                     username: "000000002090845040",
                     credential: "5NTdASVWw8AreIFCZHrGBweFDTA="
                 }]
