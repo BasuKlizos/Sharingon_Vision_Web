@@ -19,14 +19,19 @@ export class WebRTCService {
             onConnectionStateChange,
             onDetectionsReceived
         ) {
-            const config = {
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, {
-                    urls: "turn:free.expressturn.com:3478",
-                    username: "000000002090845040",
-                    credential: "5NTdASVWw8AreIFCZHrGBweFDTA="
-                }]
+        const config = {
+            iceServers: [
+                { urls: "stun:stun.l.google.com:19302" },
+                {
+                urls: [
+                    "turn:free.expressturn.com:3478?transport=udp",
+                    "turn:free.expressturn.com:3478?transport=tcp"
+                ],
+                    "username": "000000002090847582",
+                    "credential": "7PW3x2fWbtdwhg9oczei+TNW8Ts="
+                }
+            ]
             };
-
             this.pc = new RTCPeerConnection(config);
 
             // 🔥 INIT detection manager
@@ -39,6 +44,7 @@ export class WebRTCService {
             this.detectionManager.setupDataChannel(this.pc);
 
             this.pc.oniceconnectionstatechange = () => {
+                console.log("ICE:", this.pc.iceConnectionState);
                 if (onConnectionStateChange) {
                     onConnectionStateChange(this.pc.iceConnectionState);
                 }
