@@ -11,11 +11,11 @@ export function FaceCanvas({ videoRef, data }) {
     if (!canvas || !video || video.videoWidth === 0) return;
 
     const ctx = canvas.getContext("2d");
-    
+
     // Use offsetWidth/offsetHeight for accurate canvas sizing
     const displayWidth = video.offsetWidth;
     const displayHeight = video.offsetHeight;
-    
+
     // Set canvas internal resolution to match display size
     canvas.width = displayWidth;
     canvas.height = displayHeight;
@@ -43,7 +43,7 @@ export function FaceCanvas({ videoRef, data }) {
     // If crop_offset exists, use original dimensions; otherwise use video dimensions
     const videoWidth = cropOffset?.original_width || video.videoWidth;
     const videoHeight = cropOffset?.original_height || video.videoHeight;
-    
+
     const scaleX = canvas.width / videoWidth;
     const scaleY = canvas.height / videoHeight;
 
@@ -69,35 +69,24 @@ export function FaceCanvas({ videoRef, data }) {
         // Apply crop offset to coordinates
         const x_original = x + offsetX;
         const y_original = y + offsetY;
-        
+
         const drawX = x_original * scaleX;
         const drawY = y_original * scaleY;
 
         // 1. Draw Gaze Vector if eye_direction is available
-        const eye_dir = face.eye_direction || 0;
+        // eye_dir variable removed
+
         const head_yaw = face.head_yaw || 0;
-        
+
         // Draw Head Direction Vector (White/Blue)
         ctx.beginPath();
         ctx.moveTo(drawX, drawY);
         const headX = drawX + Math.sin(head_yaw) * 60;
         const headY = drawY - Math.cos(head_yaw) * 20; // Slight tilt
         ctx.lineTo(headX, headY);
-        ctx.strokeStyle = "#40a9ff";
-        ctx.lineWidth = 4;
-        ctx.stroke();
+        
+        // Eye gaze vector drawing removed as requested
 
-        // Draw Eye Gaze Vector (Red/Orange)
-        ctx.beginPath();
-        ctx.moveTo(drawX, drawY);
-        const gazeX = drawX + Math.sin(eye_dir) * 100;
-        const gazeY = drawY - Math.cos(eye_dir) * 30;
-        ctx.lineTo(gazeX, gazeY);
-        ctx.strokeStyle = face.eye_head_mismatch ? "#ff4d4f" : "#52c41a";
-        ctx.lineWidth = 3;
-        ctx.setLineDash([5, 5]); // Dashed for gaze
-        ctx.stroke();
-        ctx.setLineDash([]); // Reset
 
         // 2. Draw Face Center Point
         ctx.beginPath();
@@ -127,7 +116,7 @@ export function FaceCanvas({ videoRef, data }) {
 
   useEffect(() => {
     draw();
-    
+
     // Update on resize to keep alignment
     window.addEventListener('resize', draw);
     return () => window.removeEventListener('resize', draw);
