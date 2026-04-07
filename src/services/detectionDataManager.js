@@ -44,7 +44,7 @@ export class DetectionDataManager {
             this.dataChannel = null;
         };
 
-        this.dataChannel.onerror = (error) => {
+        this.dataChannel.onerror = () => {
         };
 
         this.dataChannel.onmessage = (event) => {

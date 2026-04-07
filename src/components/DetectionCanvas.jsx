@@ -78,7 +78,7 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
         }
 
         drawFrameInfo(ctx, detectionFrame, canvas.width, canvas.height);
-    }, [detectionFrame, videoRef, videoRef.current?.videoWidth]); // Re-run when video is ready
+    }, [detectionFrame, videoRef]); // Re-run when the detection payload changes
 
     return (
         <canvas

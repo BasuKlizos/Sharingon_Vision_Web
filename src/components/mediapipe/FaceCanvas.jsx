@@ -1,10 +1,10 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useEffectEvent } from "react";
 import PropTypes from 'prop-types';
 
 export function FaceCanvas({ videoRef, data }) {
   const canvasRef = useRef(null);
 
-  const draw = () => {
+  const draw = useEffectEvent(() => {
     const canvas = canvasRef.current;
     const video = videoRef?.current;
 
@@ -112,7 +112,7 @@ export function FaceCanvas({ videoRef, data }) {
         ctx.fillText(`⚠️ ${alertText}`, 20, 40 + i * 30);
       });
     }
-  };
+  });
 
   useEffect(() => {
     draw();

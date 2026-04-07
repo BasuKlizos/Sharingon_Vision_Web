@@ -20,12 +20,6 @@ export function FaceAnalysisPanel({ faceData }) {
   const personCount = faceData.person_count || 0;
   const deviceCount = faceData.device_count || 0;
   const faceCount = faceData.face_count || (hasFace ? faceData.faces.length : 0);
-  const isMultiplePersons = personCount > 1;
-
-  const getStatusColor = (isBad) => {
-    if (!hasFace && faceCount === 0) return '#64748b'; // Gray for no-face state
-    return isBad ? '#ef4444' : '#10b981';
-  };
 
   const getYawStatus = (yaw) => {
     if (!hasFace && faceCount === 0) return 'No Face Detected';
