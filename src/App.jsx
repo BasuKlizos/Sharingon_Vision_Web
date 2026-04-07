@@ -9,6 +9,13 @@ import { webrtcApi } from './api/webrtcApi';
 const webrtc = new WebRTCService();
 const PRECHECK_FRAME_COUNT = 3;
 const PRECHECK_CAPTURE_DELAY_MS = 180;
+const PREVIEW_ANALYSIS_INTERVAL_MS = 400;
+const PRECHECK_MIN_BRIGHTNESS = 70;
+const PRECHECK_MAX_BRIGHTNESS = 190;
+const PRECHECK_MAX_DARK_RATIO = 0.35;
+const PRECHECK_MAX_BRIGHT_RATIO = 0.25;
+const PRECHECK_DARK_PIXEL_THRESHOLD = 45;
+const PRECHECK_BRIGHT_PIXEL_THRESHOLD = 225;
 
 function wait(ms) {
   return new Promise((resolve) => {
@@ -93,6 +100,26 @@ function buildPrecheckResult(response) {
   };
 }
 
+function buildPreviewMonitorResult(response) {
+  return {
+    ...response,
+    phase: 'monitoring'
+  };
+}
+
+function getLightingStatusMessage(status) {
+  if (status === 'ok') {
+    return 'Lighting looks good. You can start WebRTC.';
+  }
+  if (status === 'too_dark') {
+    return 'Lighting is too dark. Increase front lighting before starting WebRTC.';
+  }
+  if (status === 'too_bright') {
+    return 'Lighting is too bright. Reduce glare or strong backlight before starting WebRTC.';
+  }
+  return 'Lighting precheck completed.';
+}
+
 function buildFailedPrecheckResult(error, status = 'request_failed') {
   return {
     ok: false,
@@ -100,6 +127,83 @@ function buildFailedPrecheckResult(error, status = 'request_failed') {
     status,
     message: error.message || 'Lighting precheck failed. Please try again.'
   };
+}
+
+function round(value, digits) {
+  return Number(value.toFixed(digits));
+}
+
+function analyzePreviewLighting(video, canvas) {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, 0, 0, width, height);
+
+  const { data } = ctx.getImageData(0, 0, width, height);
+  const pixelCount = data.length / 4;
+
+  if (!pixelCount) {
+    throw new Error('Camera preview is not available for lighting analysis.');
+  }
+
+  let brightnessSum = 0;
+  let darkPixels = 0;
+  let brightPixels = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const grayscale = (0.299 * data[index]) + (0.587 * data[index + 1]) + (0.114 * data[index + 2]);
+    brightnessSum += grayscale;
+
+    if (grayscale <= PRECHECK_DARK_PIXEL_THRESHOLD) {
+      darkPixels += 1;
+    }
+    if (grayscale >= PRECHECK_BRIGHT_PIXEL_THRESHOLD) {
+      brightPixels += 1;
+    }
+  }
+
+  const brightnessMean = brightnessSum / pixelCount;
+  const darkPixelRatio = darkPixels / pixelCount;
+  const brightPixelRatio = brightPixels / pixelCount;
+
+  let status = 'ok';
+  if (brightnessMean < PRECHECK_MIN_BRIGHTNESS || darkPixelRatio > PRECHECK_MAX_DARK_RATIO) {
+    status = 'too_dark';
+  } else if (brightnessMean > PRECHECK_MAX_BRIGHTNESS || brightPixelRatio > PRECHECK_MAX_BRIGHT_RATIO) {
+    status = 'too_bright';
+  }
+
+  return buildPreviewMonitorResult({
+    ok: status === 'ok',
+    status,
+    message: getLightingStatusMessage(status),
+    checked_frames: 1,
+    valid_frames: 1,
+    summary: {
+      brightness_mean: round(brightnessMean, 2),
+      dark_pixel_ratio: round(darkPixelRatio, 4),
+      bright_pixel_ratio: round(brightPixelRatio, 4),
+      min_brightness: PRECHECK_MIN_BRIGHTNESS,
+      max_brightness: PRECHECK_MAX_BRIGHTNESS,
+      max_dark_ratio: PRECHECK_MAX_DARK_RATIO,
+      max_bright_ratio: PRECHECK_MAX_BRIGHT_RATIO
+    },
+    frames: [
+      {
+        index: 0,
+        valid: true,
+        status,
+        message: getLightingStatusMessage(status),
+        brightness_mean: round(brightnessMean, 2),
+        dark_pixel_ratio: round(darkPixelRatio, 4),
+        bright_pixel_ratio: round(brightPixelRatio, 4)
+      }
+    ]
+  });
 }
 
 function hasSuccessfulPrecheck(precheckResult) {
@@ -224,6 +328,90 @@ async function runLightingPrecheckFlow({
   }
 }
 
+async function runLightingPreviewSampleFlow({
+  localVideoRef,
+  captureCanvasRef,
+  setPrecheckResult,
+  setStatus
+}) {
+  const video = localVideoRef.current;
+
+  if (!video) {
+    return;
+  }
+
+  await waitForVideoReady(video);
+
+  if (!captureCanvasRef.current) {
+    captureCanvasRef.current = document.createElement('canvas');
+  }
+
+  const result = analyzePreviewLighting(video, captureCanvasRef.current);
+
+  setPrecheckResult((current) => {
+    if (current?.phase === 'running') {
+      return current;
+    }
+    return result;
+  });
+  setStatus(result.ok ? 'Preview Ready' : 'Adjust Lighting');
+}
+
+function stopPreviewMonitorFlow({
+  previewMonitorIntervalRef,
+  previewMonitorInFlightRef
+}) {
+  if (previewMonitorIntervalRef.current) {
+    clearInterval(previewMonitorIntervalRef.current);
+    previewMonitorIntervalRef.current = null;
+  }
+
+  previewMonitorInFlightRef.current = false;
+}
+
+function startPreviewMonitorFlow({
+  localVideoRef,
+  captureCanvasRef,
+  previewMonitorIntervalRef,
+  previewMonitorInFlightRef,
+  setPrecheckResult,
+  setStatus
+}) {
+  const runSample = async () => {
+    if (previewMonitorInFlightRef.current) {
+      return;
+    }
+
+    previewMonitorInFlightRef.current = true;
+
+    try {
+      await runLightingPreviewSampleFlow({
+        localVideoRef,
+        captureCanvasRef,
+        setPrecheckResult,
+        setStatus
+      });
+    } catch (error) {
+      setPrecheckResult((current) => {
+        if (current?.phase === 'running') {
+          return current;
+        }
+        return buildFailedPrecheckResult(error);
+      });
+      setStatus('Lighting Check Failed');
+    } finally {
+      previewMonitorInFlightRef.current = false;
+    }
+  };
+
+  if (previewMonitorIntervalRef.current) {
+    return;
+  }
+
+  void runSample();
+  previewMonitorIntervalRef.current = globalThis.setInterval(runSample, PREVIEW_ANALYSIS_INTERVAL_MS);
+}
+
 function updateChannelStatusFlow(webrtcService, channelStatus, setChannelStatus) {
   const manager = webrtcService.getDetectionManager();
   const isOpen = manager?.isChannelOpen() || false;
@@ -276,6 +464,8 @@ function stopSessionFlow({
   nextStatus = 'Disconnected',
   localStreamRef,
   localVideoRef,
+  previewMonitorIntervalRef,
+  previewMonitorInFlightRef,
   statsUpdateIntervalRef,
   setIsPreviewReady,
   setPrecheckResult,
@@ -285,6 +475,10 @@ function stopSessionFlow({
   setStatus
 }) {
   webrtc.stop();
+  stopPreviewMonitorFlow({
+    previewMonitorIntervalRef,
+    previewMonitorInFlightRef
+  });
 
   if (statsUpdateIntervalRef.current) {
     clearInterval(statsUpdateIntervalRef.current);
@@ -328,6 +522,8 @@ function App() {
   const localStreamRef = useRef(null);
   const statsUpdateIntervalRef = useRef(null);
   const captureCanvasRef = useRef(null);
+  const previewMonitorIntervalRef = useRef(null);
+  const previewMonitorInFlightRef = useRef(false);
 
   const handleDetectionsReceived = (message) => {
     if (message.type === 'detection_frame') {
@@ -363,6 +559,8 @@ function App() {
     ...options,
     localStreamRef,
     localVideoRef,
+    previewMonitorIntervalRef,
+    previewMonitorInFlightRef,
     statsUpdateIntervalRef,
     setIsPreviewReady,
     setPrecheckResult,
@@ -410,6 +608,30 @@ function App() {
       setStatus('Lighting Check Failed');
     }
   };
+
+  useEffect(() => {
+    if (isPreviewReady && !isCalling && !isRunningPrecheck) {
+      startPreviewMonitorFlow({
+        localVideoRef,
+        captureCanvasRef,
+        previewMonitorIntervalRef,
+        previewMonitorInFlightRef,
+        setPrecheckResult,
+        setStatus
+      });
+      return () => {
+        stopPreviewMonitorFlow({
+          previewMonitorIntervalRef,
+          previewMonitorInFlightRef
+        });
+      };
+    }
+
+    stopPreviewMonitorFlow({
+      previewMonitorIntervalRef,
+      previewMonitorInFlightRef
+    });
+  }, [isPreviewReady, isCalling, isRunningPrecheck]);
 
   useEffect(() => {
     return () => {
@@ -512,7 +734,7 @@ function App() {
                     {isPreviewReady ? 'Preview Ready' : 'Preview Off'}
                   </span>
                   <span className="precheck-help">
-                    Camera preview, then capture frames, then call `/precheck/lighting`, then start WebRTC.
+                    Preview monitoring runs separately on a timer. Start interview still does one final `/precheck/lighting` gate before WebRTC.
                   </span>
                 </div>
                 {precheckResult?.message && (
