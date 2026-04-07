@@ -58,8 +58,8 @@ export class DetectionDataManager {
                 if (data.type === "detection_frame") {
                     this.handleUnifiedFrame(data);
                 }
-            } catch (error) {
-                console.error(error);
+            } catch {
+                console.warn('Unable to parse detection data channel message.');
             }
         };
     }

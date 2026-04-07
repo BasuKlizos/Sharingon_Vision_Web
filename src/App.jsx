@@ -1,12 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import webgazer from 'webgazer/dist/webgazer.commonjs2.js';
 import './App.css';
 import { WebRTCService } from './services/webrtcService';
 import { FaceCanvas } from './components/mediapipe/FaceCanvas';
 import { DetectionCanvas } from './components/DetectionCanvas';
 import { FaceAnalysisPanel } from './components/mediapipe/FaceAnalysisPanel';
+import { CalibrationOverlay } from './components/CalibrationOverlay';
 import { webrtcApi } from './api/webrtcApi';
 
 const webrtc = new WebRTCService();
+
 const PRECHECK_FRAME_COUNT = 3;
 const PRECHECK_CAPTURE_DELAY_MS = 180;
 const PREVIEW_ANALYSIS_INTERVAL_MS = 400;
@@ -16,6 +19,8 @@ const PRECHECK_MAX_DARK_RATIO = 0.35;
 const PRECHECK_MAX_BRIGHT_RATIO = 0.25;
 const PRECHECK_DARK_PIXEL_THRESHOLD = 45;
 const PRECHECK_BRIGHT_PIXEL_THRESHOLD = 225;
+const CALIBRATION_CLICKS_PER_TARGET = 5;
+const CALIBRATION_SAMPLE_TARGET = 8;
 
 function wait(ms) {
   return new Promise((resolve) => {
@@ -93,11 +98,21 @@ async function capturePrecheckFrames(video, canvas, frameCount) {
   return frames;
 }
 
-function buildPrecheckResult(response) {
-  return {
-    ...response,
-    phase: response.ok ? 'passed' : 'failed'
-  };
+function round(value, digits) {
+  return Number(value.toFixed(digits));
+}
+
+function getLightingStatusMessage(status) {
+  if (status === 'ok') {
+    return 'Lighting looks good. You can start the session.';
+  }
+  if (status === 'too_dark') {
+    return 'Lighting is too dark. Increase front lighting before starting.';
+  }
+  if (status === 'too_bright') {
+    return 'Lighting is too bright. Reduce glare or strong backlight before starting.';
+  }
+  return 'Lighting precheck completed.';
 }
 
 function buildPreviewMonitorResult(response) {
@@ -107,17 +122,19 @@ function buildPreviewMonitorResult(response) {
   };
 }
 
-function getLightingStatusMessage(status) {
-  if (status === 'ok') {
-    return 'Lighting looks good. You can start WebRTC.';
-  }
-  if (status === 'too_dark') {
-    return 'Lighting is too dark. Increase front lighting before starting WebRTC.';
-  }
-  if (status === 'too_bright') {
-    return 'Lighting is too bright. Reduce glare or strong backlight before starting WebRTC.';
-  }
-  return 'Lighting precheck completed.';
+function buildPrecheckResult(response) {
+  return {
+    ...response,
+    phase: response.ok ? 'passed' : 'failed'
+  };
+}
+
+function buildRunningPrecheckState() {
+  return {
+    phase: 'running',
+    status: 'checking',
+    message: `Capturing ${PRECHECK_FRAME_COUNT} frames for lighting precheck...`
+  };
 }
 
 function buildFailedPrecheckResult(error, status = 'request_failed') {
@@ -127,10 +144,6 @@ function buildFailedPrecheckResult(error, status = 'request_failed') {
     status,
     message: error.message || 'Lighting precheck failed. Please try again.'
   };
-}
-
-function round(value, digits) {
-  return Number(value.toFixed(digits));
 }
 
 function analyzePreviewLighting(video, canvas) {
@@ -206,15 +219,6 @@ function analyzePreviewLighting(video, canvas) {
   });
 }
 
-function hasSuccessfulPrecheck(precheckResult) {
-  return Boolean(precheckResult?.ok && precheckResult.status === 'ok');
-}
-
-function setPreviewReadyState(setIsPreviewReady, setStatus) {
-  setIsPreviewReady(true);
-  setStatus('Preview Ready');
-}
-
 async function attachPreviewStream(videoRef, stream) {
   if (videoRef.current) {
     videoRef.current.srcObject = stream;
@@ -239,284 +243,25 @@ async function requestCameraStream() {
   return stream;
 }
 
-async function ensureCameraPreviewFlow({
-  localStreamRef,
-  localVideoRef,
-  setIsPreparingPreview,
-  setPrecheckResult,
-  setIsPreviewReady,
-  setStatus
-}) {
-  if (localStreamRef.current) {
-    if (localVideoRef.current && localVideoRef.current.srcObject !== localStreamRef.current) {
-      localVideoRef.current.srcObject = localStreamRef.current;
-    }
-    await waitForVideoReady(localVideoRef.current);
-    setPreviewReadyState(setIsPreviewReady, setStatus);
-    return localStreamRef.current;
-  }
-
-  setIsPreparingPreview(true);
-  setStatus('Opening camera...');
-  setPrecheckResult(null);
-
-  try {
-    const stream = await requestCameraStream();
-    localStreamRef.current = stream;
-    await attachPreviewStream(localVideoRef, stream);
-    setPreviewReadyState(setIsPreviewReady, setStatus);
-    return stream;
-  } catch (error) {
-    setStatus('Camera Error');
-    throw error;
-  } finally {
-    setIsPreparingPreview(false);
-  }
-}
-
-function buildRunningPrecheckState() {
-  return {
-    phase: 'running',
-    status: 'checking',
-    message: `Capturing ${PRECHECK_FRAME_COUNT} frames for lighting precheck...`
-  };
-}
-
-async function runLightingPrecheckFlow({
-  ensureCameraPreview,
-  localVideoRef,
-  captureCanvasRef,
-  setIsRunningPrecheck,
-  setPrecheckResult,
-  setStatus
-}) {
-  const stream = await ensureCameraPreview();
-  const video = localVideoRef.current;
-
-  if (!stream || !video) {
-    throw new Error('Camera preview is not available for lighting precheck.');
-  }
-
-  await waitForVideoReady(video);
-  setIsRunningPrecheck(true);
-  setStatus('Checking lighting...');
-  setPrecheckResult(buildRunningPrecheckState());
-
-  try {
-    if (!captureCanvasRef.current) {
-      captureCanvasRef.current = document.createElement('canvas');
-    }
-
-    const frames = await capturePrecheckFrames(
-      video,
-      captureCanvasRef.current,
-      PRECHECK_FRAME_COUNT
-    );
-    const response = await webrtcApi.runLightingPrecheck(frames);
-    const result = buildPrecheckResult(response);
-
-    setPrecheckResult(result);
-    setStatus(response.ok ? 'Lighting Approved' : 'Lighting Check Failed');
-    return result;
-  } catch (error) {
-    const failedResult = buildFailedPrecheckResult(error);
-    setPrecheckResult(failedResult);
-    setStatus('Lighting Check Failed');
-    return failedResult;
-  } finally {
-    setIsRunningPrecheck(false);
-  }
-}
-
-async function runLightingPreviewSampleFlow({
-  localVideoRef,
-  captureCanvasRef,
-  setPrecheckResult,
-  setStatus
-}) {
-  const video = localVideoRef.current;
-
-  if (!video) {
-    return;
-  }
-
-  await waitForVideoReady(video);
-
-  if (!captureCanvasRef.current) {
-    captureCanvasRef.current = document.createElement('canvas');
-  }
-
-  const result = analyzePreviewLighting(video, captureCanvasRef.current);
-
-  setPrecheckResult((current) => {
-    if (current?.phase === 'running') {
-      return current;
-    }
-    return result;
-  });
-  setStatus(result.ok ? 'Preview Ready' : 'Adjust Lighting');
-}
-
-function stopPreviewMonitorFlow({
-  previewMonitorIntervalRef,
-  previewMonitorInFlightRef
-}) {
-  if (previewMonitorIntervalRef.current) {
-    clearInterval(previewMonitorIntervalRef.current);
-    previewMonitorIntervalRef.current = null;
-  }
-
-  previewMonitorInFlightRef.current = false;
-}
-
-function startPreviewMonitorFlow({
-  localVideoRef,
-  captureCanvasRef,
-  previewMonitorIntervalRef,
-  previewMonitorInFlightRef,
-  setPrecheckResult,
-  setStatus
-}) {
-  const runSample = async () => {
-    if (previewMonitorInFlightRef.current) {
-      return;
-    }
-
-    previewMonitorInFlightRef.current = true;
-
-    try {
-      await runLightingPreviewSampleFlow({
-        localVideoRef,
-        captureCanvasRef,
-        setPrecheckResult,
-        setStatus
-      });
-    } catch (error) {
-      setPrecheckResult((current) => {
-        if (current?.phase === 'running') {
-          return current;
-        }
-        return buildFailedPrecheckResult(error);
-      });
-      setStatus('Lighting Check Failed');
-    } finally {
-      previewMonitorInFlightRef.current = false;
-    }
-  };
-
-  if (previewMonitorIntervalRef.current) {
-    return;
-  }
-
-  void runSample();
-  previewMonitorIntervalRef.current = globalThis.setInterval(runSample, PREVIEW_ANALYSIS_INTERVAL_MS);
-}
-
-function updateChannelStatusFlow(webrtcService, channelStatus, setChannelStatus) {
-  const manager = webrtcService.getDetectionManager();
-  const isOpen = manager?.isChannelOpen() || false;
-  const currentStatus = isOpen ? 'open' : 'closed';
-
-  if (currentStatus !== channelStatus) {
-    setChannelStatus(currentStatus);
-  }
-}
-
-function handleConnectionStateChange(state, setStatus) {
-  if (state === 'connected' || state === 'completed') {
-    setStatus('Live');
-  }
-  if (state === 'failed') {
-    setStatus('Connection Failed');
-  }
-}
-
-async function startWebRtcSessionFlow({
-  stream,
-  handleDetectionsReceived,
-  updateStats,
-  statsUpdateIntervalRef,
-  setIsCalling,
-  setStatus,
-  setPrecheckResult,
-  stopSession
-}) {
-  try {
-    setIsCalling(true);
-    setStatus('Connecting...');
-
-    await Promise.resolve(webrtc.createSession(
-      stream,
-      null,
-      (state) => handleConnectionStateChange(state, setStatus),
-      handleDetectionsReceived
-    ));
-
-    statsUpdateIntervalRef.current = setInterval(updateStats, 500);
-  } catch (error) {
-    setPrecheckResult(buildFailedPrecheckResult(error, 'session_failed'));
-    stopSession({ keepPreview: true, nextStatus: 'Preview Ready' });
-  }
-}
-
-function stopSessionFlow({
-  keepPreview = false,
-  nextStatus = 'Disconnected',
-  localStreamRef,
-  localVideoRef,
-  previewMonitorIntervalRef,
-  previewMonitorInFlightRef,
-  statsUpdateIntervalRef,
-  setIsPreviewReady,
-  setPrecheckResult,
-  setDetections,
-  setChannelStatus,
-  setIsCalling,
-  setStatus
-}) {
-  webrtc.stop();
-  stopPreviewMonitorFlow({
-    previewMonitorIntervalRef,
-    previewMonitorInFlightRef
-  });
-
-  if (statsUpdateIntervalRef.current) {
-    clearInterval(statsUpdateIntervalRef.current);
-    statsUpdateIntervalRef.current = null;
-  }
-
-  if (!keepPreview && localStreamRef.current) {
-    localStreamRef.current.getTracks().forEach((track) => track.stop());
-    localStreamRef.current = null;
-    setIsPreviewReady(false);
-    setPrecheckResult(null);
-
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-    }
-  }
-
-  setDetections({
-    yolo: null,
-    face: null
-  });
-  setChannelStatus('closed');
-  setIsCalling(false);
-  setStatus(nextStatus);
-}
-
 function App() {
-  const [status, setStatus] = useState('Disconnected');
+  const [status, setStatus] = useState('Preparing camera...');
   const [isCalling, setIsCalling] = useState(false);
-  const [isPreviewReady, setIsPreviewReady] = useState(false);
-  const [isPreparingPreview, setIsPreparingPreview] = useState(false);
-  const [isRunningPrecheck, setIsRunningPrecheck] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
   const [detections, setDetections] = useState({
     yolo: null,
     face: null
   });
   const [channelStatus, setChannelStatus] = useState('closed');
+  const [cameraReady, setCameraReady] = useState(false);
   const [precheckResult, setPrecheckResult] = useState(null);
+  const [isRunningPrecheck, setIsRunningPrecheck] = useState(false);
+  const [boundaries, setBoundaries] = useState(null);
+  const [calibrationStep, setCalibrationStep] = useState(0);
+  const [calibrationClicks, setCalibrationClicks] = useState([0, 0, 0, 0]);
+  const [isCollectingCalibrationSamples, setIsCollectingCalibrationSamples] = useState(false);
+  const [calibrationComplete, setCalibrationComplete] = useState(false);
+  const [calibrationError, setCalibrationError] = useState('');
+  const [currentGazePoint, setCurrentGazePoint] = useState(null);
 
   const localVideoRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -524,123 +269,500 @@ function App() {
   const captureCanvasRef = useRef(null);
   const previewMonitorIntervalRef = useRef(null);
   const previewMonitorInFlightRef = useRef(false);
+  const monitoringIntervalRef = useRef(null);
+  const latestGazePointRef = useRef(null);
+  const calibrationSamplesRef = useRef([]);
+  const calibrationTargetPointsRef = useRef([]);
+  const isMountedRef = useRef(false);
+  const webgazerReadyRef = useRef(false);
+  const calibrationFinalizedRef = useRef(false);
 
-  const handleDetectionsReceived = (message) => {
+  const isDev = import.meta.env.DEV;
+
+  const stopPreviewMonitor = useCallback(() => {
+    if (previewMonitorIntervalRef.current) {
+      clearInterval(previewMonitorIntervalRef.current);
+      previewMonitorIntervalRef.current = null;
+    }
+
+    previewMonitorInFlightRef.current = false;
+  }, []);
+
+  const stopMonitoring = useCallback(() => {
+    if (monitoringIntervalRef.current) {
+      clearInterval(monitoringIntervalRef.current);
+      monitoringIntervalRef.current = null;
+    }
+  }, []);
+
+  const updateStats = useCallback(() => {
+    const manager = webrtc.getDetectionManager();
+    const isOpen = manager?.isChannelOpen() || false;
+    const currentStatus = isOpen ? 'open' : 'closed';
+
+    setChannelStatus((prevStatus) => (
+      prevStatus === currentStatus ? prevStatus : currentStatus
+    ));
+  }, []);
+
+  const handleDetectionsReceived = useCallback((message) => {
     if (message.type === 'detection_frame') {
       setDetections({
         yolo: message,
         face: message.face
       });
     }
-    console.log('message', message);
-  };
+  }, []);
 
-  const ensureCameraPreview = () => ensureCameraPreviewFlow({
-    localStreamRef,
-    localVideoRef,
-    setIsPreparingPreview,
-    setPrecheckResult,
-    setIsPreviewReady,
-    setStatus
-  });
-
-  const runLightingPrecheck = () => runLightingPrecheckFlow({
-    ensureCameraPreview,
-    localVideoRef,
-    captureCanvasRef,
-    setIsRunningPrecheck,
-    setPrecheckResult,
-    setStatus
-  });
-
-  const updateStats = () => updateChannelStatusFlow(webrtc, channelStatus, setChannelStatus);
-
-  const stopSession = (options = {}) => stopSessionFlow({
-    ...options,
-    localStreamRef,
-    localVideoRef,
-    previewMonitorIntervalRef,
-    previewMonitorInFlightRef,
-    statsUpdateIntervalRef,
-    setIsPreviewReady,
-    setPrecheckResult,
-    setDetections,
-    setChannelStatus,
-    setIsCalling,
-    setStatus
-  });
-
-  const startWebRtcSession = (stream) => startWebRtcSessionFlow({
-    stream,
-    handleDetectionsReceived,
-    updateStats,
-    statsUpdateIntervalRef,
-    setIsCalling,
-    setStatus,
-    setPrecheckResult,
-    stopSession
-  });
-
-  const handleStartPreview = async () => {
-    try {
-      await ensureCameraPreview();
-      await runLightingPrecheck();
-    } catch (error) {
-      setPrecheckResult(buildFailedPrecheckResult(error));
-      setStatus('Lighting Check Failed');
+  const collectPredictionSample = useCallback((data) => {
+    if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) {
+      return;
     }
-  };
 
-  const handleStartInterview = async () => {
+    const point = {
+      x: data.x,
+      y: data.y,
+      timestamp: Date.now()
+    };
+
+    latestGazePointRef.current = point;
+    setCurrentGazePoint(point);
+
+    if (!calibrationFinalizedRef.current) {
+      calibrationSamplesRef.current.push(point);
+    }
+  }, []);
+
+  const cleanupWebGazer = useCallback(() => {
+    if (!webgazerReadyRef.current) {
+      return;
+    }
+
     try {
-      const stream = await ensureCameraPreview();
-      const result = hasSuccessfulPrecheck(precheckResult)
-        ? precheckResult
-        : await runLightingPrecheck();
+      if (webgazer?.clearGazeListener) {
+        webgazer.clearGazeListener();
+      } else if (webgazer?.setGazeListener) {
+        webgazer.setGazeListener(null);
+      }
 
-      if (!result?.ok || result.status !== 'ok') {
+      if (webgazer?.pause) {
+        webgazer.pause();
+      }
+
+      if (webgazer?.end) {
+        webgazer.end();
+      }
+    } catch (error) {
+      console.warn('WebGazer cleanup skipped after DOM teardown.', error);
+    } finally {
+      webgazerReadyRef.current = false;
+    }
+  }, []);
+
+  const initializeWebGazer = useCallback(async () => {
+    if (webgazerReadyRef.current) {
+      return;
+    }
+
+    if (!webgazer) {
+      throw new Error('WebGazer did not become available.');
+    }
+
+    webgazer
+      .setRegression('ridge')
+      .showVideoPreview(false)
+      .showFaceOverlay(false)
+      .showFaceFeedbackBox(false)
+      .showPredictionPoints(false)
+      .saveDataAcrossSessions(false)
+      .setGazeListener((data) => {
+        collectPredictionSample(data);
+      });
+
+    await webgazer.begin();
+    webgazerReadyRef.current = true;
+  }, [collectPredictionSample]);
+
+  const resetCalibration = useCallback(() => {
+    calibrationFinalizedRef.current = false;
+    calibrationSamplesRef.current = [];
+    calibrationTargetPointsRef.current = [];
+    setCalibrationClicks([0, 0, 0, 0]);
+    setCalibrationStep(0);
+    setCalibrationComplete(false);
+    setBoundaries(null);
+    setCalibrationError('');
+    setIsCollectingCalibrationSamples(false);
+  }, []);
+
+  const finalizeCalibration = useCallback(() => {
+    const validSamples = calibrationSamplesRef.current.filter((point) => (
+      Number.isFinite(point.x) && Number.isFinite(point.y)
+    ));
+
+    const fallbackTargetPoints = calibrationTargetPointsRef.current.filter((point) => (
+      Number.isFinite(point.x) && Number.isFinite(point.y)
+    ));
+
+    const sourcePoints = validSamples.length >= CALIBRATION_SAMPLE_TARGET
+      ? validSamples
+      : fallbackTargetPoints;
+
+    if (sourcePoints.length < 4) {
+      resetCalibration();
+      setCalibrationError('Calibration could not collect enough gaze data. Please try again.');
+      setStatus('Calibrating gaze...');
+      return;
+    }
+
+    calibrationFinalizedRef.current = true;
+
+    const nextBoundaries = {
+      minX: Math.min(...sourcePoints.map((point) => point.x)),
+      maxX: Math.max(...sourcePoints.map((point) => point.x)),
+      minY: Math.min(...sourcePoints.map((point) => point.y)),
+      maxY: Math.max(...sourcePoints.map((point) => point.y))
+    };
+
+    setBoundaries(nextBoundaries);
+    setCalibrationComplete(true);
+    setIsCollectingCalibrationSamples(false);
+    setCalibrationError(validSamples.length >= CALIBRATION_SAMPLE_TARGET
+      ? ''
+      : 'WebGazer predictions were sparse, so the safe zone was built from your calibration clicks.'
+    );
+    setStatus('Ready to start');
+  }, [resetCalibration]);
+
+  const handleCalibrationClick = useCallback(() => {
+    if (isCollectingCalibrationSamples) {
+      return;
+    }
+
+    const targetIndex = calibrationStep;
+    if (targetIndex > 3) {
+      return;
+    }
+
+    const dotElement = document.querySelector('.calibration-dot');
+    if (dotElement) {
+      const rect = dotElement.getBoundingClientRect();
+      const x = rect.left + (rect.width / 2);
+      const y = rect.top + (rect.height / 2);
+      calibrationTargetPointsRef.current.push({ x, y, timestamp: Date.now() });
+
+      if (webgazer?.recordScreenPosition) {
+        webgazer.recordScreenPosition(x, y, 'click');
+      } else if (webgazer?.recordScreenPositionAsync) {
+        webgazer.recordScreenPositionAsync(x, y, 'click');
+      }
+    }
+
+    setCalibrationClicks((prevClicks) => {
+      const nextClicks = [...prevClicks];
+      nextClicks[targetIndex] += 1;
+
+      if (nextClicks[targetIndex] >= CALIBRATION_CLICKS_PER_TARGET) {
+        if (targetIndex === 3) {
+          setIsCollectingCalibrationSamples(true);
+          setStatus('Calibrating gaze...');
+        } else {
+          setCalibrationStep(targetIndex + 1);
+        }
+      }
+
+      return nextClicks;
+    });
+  }, [calibrationStep, isCollectingCalibrationSamples]);
+
+  const runLightingPrecheck = useCallback(async () => {
+    const video = localVideoRef.current;
+
+    if (!localStreamRef.current || !video) {
+      throw new Error('Camera preview is not available for lighting precheck.');
+    }
+
+    await waitForVideoReady(video);
+    setIsRunningPrecheck(true);
+    setPrecheckResult(buildRunningPrecheckState());
+    setStatus('Checking lighting...');
+
+    try {
+      if (!captureCanvasRef.current) {
+        captureCanvasRef.current = document.createElement('canvas');
+      }
+
+      const frames = await capturePrecheckFrames(
+        video,
+        captureCanvasRef.current,
+        PRECHECK_FRAME_COUNT
+      );
+      const response = await webrtcApi.runLightingPrecheck(frames);
+      if (typeof response.ok !== 'boolean' || typeof response.status !== 'string') {
+        throw new Error('Lighting precheck response is missing required ok/status fields.');
+      }
+      const result = buildPrecheckResult(response);
+      setPrecheckResult(result);
+      setStatus(response.ok ? 'Lighting Approved' : 'Lighting Check Failed');
+      return result;
+    } catch (error) {
+      const failedResult = buildFailedPrecheckResult(error);
+      setPrecheckResult(failedResult);
+      setStatus('Lighting Check Failed');
+      return failedResult;
+    } finally {
+      setIsRunningPrecheck(false);
+    }
+  }, []);
+
+  const initializeCameraAndCalibration = useCallback(async () => {
+    if (localStreamRef.current || isMountedRef.current) {
+      return;
+    }
+
+    isMountedRef.current = true;
+
+    try {
+      setStatus('Preparing camera...');
+      const stream = await requestCameraStream();
+
+      localStreamRef.current = stream;
+      await attachPreviewStream(localVideoRef, stream);
+      setCameraReady(true);
+
+      await initializeWebGazer();
+
+      if (!isMountedRef.current) {
         return;
       }
 
-      await startWebRtcSession(stream);
+      setStatus('Calibrating gaze...');
     } catch (error) {
-      setPrecheckResult(buildFailedPrecheckResult(error));
-      setStatus('Lighting Check Failed');
-    }
-  };
+      const hasCameraStream = Boolean(localStreamRef.current);
 
-  useEffect(() => {
-    if (isPreviewReady && !isCalling && !isRunningPrecheck) {
-      startPreviewMonitorFlow({
-        localVideoRef,
-        captureCanvasRef,
-        previewMonitorIntervalRef,
-        previewMonitorInFlightRef,
-        setPrecheckResult,
-        setStatus
-      });
-      return () => {
-        stopPreviewMonitorFlow({
-          previewMonitorIntervalRef,
-          previewMonitorInFlightRef
-        });
-      };
+      setStatus(hasCameraStream ? 'Calibration unavailable' : 'Camera unavailable');
+      setCameraReady(hasCameraStream);
+      setCalibrationError(
+        error?.message || (
+          hasCameraStream
+            ? 'Gaze calibration could not be initialized.'
+            : 'Camera preview could not be initialized.'
+        )
+      );
+      isMountedRef.current = false;
+    }
+  }, [initializeWebGazer]);
+
+  const startMonitoring = useCallback((activeSessionId, activeBoundaries) => {
+    stopMonitoring();
+
+    monitoringIntervalRef.current = globalThis.setInterval(async () => {
+      const point = latestGazePointRef.current;
+      if (!point || !activeBoundaries || !activeSessionId) {
+        return;
+      }
+
+      const isOutsideBoundary = (
+        point.x < activeBoundaries.minX
+        || point.x > activeBoundaries.maxX
+        || point.y < activeBoundaries.minY
+        || point.y > activeBoundaries.maxY
+      );
+
+      if (!isOutsideBoundary) {
+        return;
+      }
+
+      try {
+        await webrtcApi.sendViolationEvent(activeSessionId, point, activeBoundaries);
+      } catch (error) {
+        console.error('Failed to send violation event', error);
+      }
+    }, 500);
+  }, [stopMonitoring]);
+
+  const stopSession = useCallback((options = {}) => {
+    const { keepPreview = true, nextStatus } = options;
+
+    stopMonitoring();
+    webrtc.stop();
+
+    if (statsUpdateIntervalRef.current) {
+      clearInterval(statsUpdateIntervalRef.current);
+      statsUpdateIntervalRef.current = null;
     }
 
-    stopPreviewMonitorFlow({
-      previewMonitorIntervalRef,
-      previewMonitorInFlightRef
+    if (!keepPreview) {
+      stopPreviewMonitor();
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+      }
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+
+      setCameraReady(false);
+    }
+
+    setDetections({
+      yolo: null,
+      face: null
     });
-  }, [isPreviewReady, isCalling, isRunningPrecheck]);
+    setChannelStatus('closed');
+    setIsCalling(false);
+    setSessionId(null);
+    setStatus(nextStatus ?? (keepPreview ? 'Ready to start' : 'Disconnected'));
+  }, [stopMonitoring, stopPreviewMonitor]);
+
+  const startSession = useCallback(async () => {
+    if (!localStreamRef.current) {
+      setCalibrationError('Camera is not ready yet.');
+      return;
+    }
+
+    if (!calibrationComplete || !boundaries) {
+      setCalibrationError('Finish calibration before starting the session.');
+      return;
+    }
+
+    setCalibrationError('');
+
+    const lightingResult = await runLightingPrecheck();
+    if (!lightingResult?.ok || lightingResult.status !== 'ok') {
+      return;
+    }
+
+    try {
+      setStatus('Connecting...');
+      setIsCalling(true);
+
+      const nextSessionId = await Promise.resolve(webrtc.createSession(
+        localStreamRef.current,
+        null,
+        (state) => {
+          if (state === 'connected' || state === 'completed') {
+            setStatus('Live');
+          }
+          if (state === 'failed') {
+            setStatus('Connection Failed');
+          }
+        },
+        handleDetectionsReceived
+      ));
+
+      setSessionId(nextSessionId);
+      await webrtcApi.saveCalibration(nextSessionId, boundaries);
+      startMonitoring(nextSessionId, boundaries);
+      statsUpdateIntervalRef.current = globalThis.setInterval(updateStats, 500);
+    } catch (error) {
+      setPrecheckResult(buildFailedPrecheckResult(error, 'session_failed'));
+      stopSession({ keepPreview: true, nextStatus: 'Ready to start' });
+    }
+  }, [
+    boundaries,
+    calibrationComplete,
+    handleDetectionsReceived,
+    runLightingPrecheck,
+    startMonitoring,
+    stopSession,
+    updateStats
+  ]);
 
   useEffect(() => {
-    return () => {
-      stopSession({ keepPreview: false });
-    };
-  }, []);
+    void initializeCameraAndCalibration();
 
-  const isBusy = isPreparingPreview || isRunningPrecheck;
-  const showPrecheckCard = isPreviewReady && !isCalling;
+    return () => {
+      isMountedRef.current = false;
+      stopSession({ keepPreview: false, nextStatus: 'Disconnected' });
+      cleanupWebGazer();
+    };
+  }, [cleanupWebGazer, initializeCameraAndCalibration, stopSession]);
+
+  useEffect(() => {
+    if (!cameraReady || !calibrationComplete || isCalling || isRunningPrecheck) {
+      stopPreviewMonitor();
+      return undefined;
+    }
+
+    const runSample = async () => {
+      if (previewMonitorInFlightRef.current) {
+        return;
+      }
+
+      previewMonitorInFlightRef.current = true;
+
+      try {
+        const video = localVideoRef.current;
+        if (!video) {
+          return;
+        }
+
+        await waitForVideoReady(video);
+
+        if (!captureCanvasRef.current) {
+          captureCanvasRef.current = document.createElement('canvas');
+        }
+
+        const result = analyzePreviewLighting(video, captureCanvasRef.current);
+        setPrecheckResult((current) => (
+          current?.phase === 'running' ? current : result
+        ));
+      } catch (error) {
+        setPrecheckResult((current) => (
+          current?.phase === 'running' ? current : buildFailedPrecheckResult(error)
+        ));
+      } finally {
+        previewMonitorInFlightRef.current = false;
+      }
+    };
+
+    void runSample();
+    previewMonitorIntervalRef.current = globalThis.setInterval(runSample, PREVIEW_ANALYSIS_INTERVAL_MS);
+
+    return () => {
+      stopPreviewMonitor();
+    };
+  }, [calibrationComplete, cameraReady, isCalling, isRunningPrecheck, stopPreviewMonitor]);
+
+  useEffect(() => {
+    if (!isCollectingCalibrationSamples) {
+      return undefined;
+    }
+
+    const intervalId = globalThis.setInterval(() => {
+      const validSamples = calibrationSamplesRef.current.filter((point) => (
+        Number.isFinite(point.x) && Number.isFinite(point.y)
+      ));
+
+      if (validSamples.length >= CALIBRATION_SAMPLE_TARGET) {
+        clearInterval(intervalId);
+        finalizeCalibration();
+      }
+    }, 150);
+
+    const timeoutId = globalThis.setTimeout(() => {
+      clearInterval(intervalId);
+      finalizeCalibration();
+    }, 3500);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(timeoutId);
+    };
+  }, [finalizeCalibration, isCollectingCalibrationSamples]);
+
+  const clicksForCurrentTarget = calibrationClicks[calibrationStep] || 0;
+  const faceOverlayData = detections.face
+    ? {
+        ...detections.face,
+        crop_offset: detections.yolo?.crop_offset || detections.face?.crop_offset
+      }
+    : null;
+  const showPrecheckCard = cameraReady && calibrationComplete && !isCalling;
+  const isBusy = isRunningPrecheck;
 
   return (
     <div className="app-wrapper">
@@ -648,6 +770,15 @@ function App() {
         <div className="blob blob-1"></div>
         <div className="blob blob-2"></div>
       </div>
+
+      <CalibrationOverlay
+        visible={cameraReady && !calibrationComplete}
+        activeTargetIndex={Math.min(calibrationStep, 3)}
+        clicksForCurrentTarget={clicksForCurrentTarget}
+        clicksPerTarget={CALIBRATION_CLICKS_PER_TARGET}
+        isCollectingSamples={isCollectingCalibrationSamples}
+        onTargetClick={handleCalibrationClick}
+      />
 
       <div className="glass-container">
         <header className="header">
@@ -659,6 +790,12 @@ function App() {
               <div className="indicator"></div>
               <span>{status}</span>
             </div>
+            {cameraReady && (
+              <div className={`status ${calibrationComplete ? 'live' : ''}`}>
+                <div className="indicator"></div>
+                <span>{calibrationComplete ? 'Calibration Ready' : 'Calibrating'}</span>
+              </div>
+            )}
             {isCalling && (
               <div className={`detection-channel-status ${channelStatus}`}>
                 <div className="indicator"></div>
@@ -704,17 +841,19 @@ function App() {
 
             <FaceCanvas
               videoRef={localVideoRef}
-              data={{
-                ...detections.face,
-                crop_offset: detections.yolo?.crop_offset || detections.face?.crop_offset
-              }}
+              data={faceOverlayData}
             />
 
             {detections.yolo && (
-              <FaceAnalysisPanel
-                faceData={{
-                  ...detections.face,
-                  crop_offset: detections.yolo?.crop_offset || detections.face?.crop_offset
+              <FaceAnalysisPanel faceData={faceOverlayData} />
+            )}
+
+            {isDev && currentGazePoint && (
+              <div
+                className="gaze-point-debug"
+                style={{
+                  left: `${currentGazePoint.x}px`,
+                  top: `${currentGazePoint.y}px`
                 }}
               />
             )}
@@ -722,53 +861,31 @@ function App() {
         </main>
 
         <footer className="controls">
+          <div className="session-meta">
+            <span>{sessionId ? `Session: ${sessionId}` : 'Session not started'}</span>
+            {boundaries && (
+              <span>
+                Safe Zone: {Math.round(boundaries.minX)}, {Math.round(boundaries.minY)} to {Math.round(boundaries.maxX)}, {Math.round(boundaries.maxY)}
+              </span>
+            )}
+            {precheckResult?.message && (
+              <span>{precheckResult.message}</span>
+            )}
+            {calibrationError && <span className="error-text">{calibrationError}</span>}
+          </div>
+
           {isCalling ? (
             <button className="btn btn-danger" onClick={() => stopSession()}>
               End Session
             </button>
           ) : (
-            <>
-              <div className="precheck-panel">
-                <div className="precheck-panel-row">
-                  <span className={`precheck-pill ${precheckResult?.status || (isPreviewReady ? 'preview_ready' : 'idle')}`}>
-                    {isPreviewReady ? 'Preview Ready' : 'Preview Off'}
-                  </span>
-                  <span className="precheck-help">
-                    Preview monitoring runs separately on a timer. Start interview still does one final `/precheck/lighting` gate before WebRTC.
-                  </span>
-                </div>
-                {precheckResult?.message && (
-                  <div className="precheck-message">{precheckResult.message}</div>
-                )}
-              </div>
-
-              {!isPreviewReady ? (
-                <button
-                  className="btn btn-primary"
-                  onClick={handleStartPreview}
-                  disabled={isBusy}
-                >
-                  {isPreparingPreview ? 'Opening camera...' : 'Start Preview Check'}
-                </button>
-              ) : (
-                <>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => stopSession()}
-                    disabled={isBusy}
-                  >
-                    Stop Preview
-                  </button>
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleStartInterview}
-                    disabled={isBusy}
-                  >
-                    {isRunningPrecheck ? 'Checking lighting...' : 'Start Interview'}
-                  </button>
-                </>
-              )}
-            </>
+            <button
+              className="btn btn-primary"
+              onClick={startSession}
+              disabled={!cameraReady || !calibrationComplete || isBusy}
+            >
+              {isRunningPrecheck ? 'Checking lighting...' : 'Start Session'}
+            </button>
           )}
         </footer>
       </div>

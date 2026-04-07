@@ -1,10 +1,10 @@
-import React, { useRef, useEffect, useEffectEvent } from "react";
+import { useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 
 export function FaceCanvas({ videoRef, data }) {
   const canvasRef = useRef(null);
 
-  const draw = useEffectEvent(() => {
+  const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const video = videoRef?.current;
 
@@ -112,7 +112,7 @@ export function FaceCanvas({ videoRef, data }) {
         ctx.fillText(`⚠️ ${alertText}`, 20, 40 + i * 30);
       });
     }
-  });
+  }, [data, videoRef]);
 
   useEffect(() => {
     draw();
@@ -120,7 +120,7 @@ export function FaceCanvas({ videoRef, data }) {
     // Update on resize to keep alignment
     window.addEventListener('resize', draw);
     return () => window.removeEventListener('resize', draw);
-  }, [data]);
+  }, [draw]);
 
   return (
     <canvas

@@ -1,8 +1,15 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+function ensureJsonObject(payload, fallbackMessage) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        throw new Error(fallbackMessage);
+    }
+
+    return payload;
+}
+
 export const webrtcApi = {
     async sendOffer(sdp, type) {
-        console.log('[API] Sending WebRTC offer request');
         const response = await fetch(`${API_BASE_URL}/api/v1/webrtc/offer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -13,14 +20,10 @@ export const webrtcApi = {
             throw new Error(`Signaling failed: ${response.statusText}`);
         }
 
-        console.log('[API] WebRTC offer request succeeded');
         return await response.json();
     },
 
     async runLightingPrecheck(frames) {
-        console.log('[API] Sending lighting precheck request', {
-            frameCount: frames.length
-        });
         const response = await fetch(`${API_BASE_URL}/api/v1/precheck/lighting`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -34,7 +37,46 @@ export const webrtcApi = {
             throw new Error(message);
         }
 
-        console.log('[API] Lighting precheck request succeeded');
-        return payload;
+        return ensureJsonObject(
+            payload,
+            'Lighting precheck returned an invalid response. Expected JSON with ok/status fields.'
+        );
+    },
+
+    async saveCalibration(sessionId, boundaries) {
+        const response = await fetch(`${API_BASE_URL}/api/calibration/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId,
+                ...boundaries
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Calibration save failed: ${response.statusText}`);
+        }
+
+        return await response.json().catch(() => ({}));
+    },
+
+    async sendViolationEvent(sessionId, point, boundaries) {
+        const response = await fetch(`${API_BASE_URL}/api/violation-event`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId,
+                type: 'violation-event',
+                point,
+                boundaries,
+                timestamp: new Date().toISOString()
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Violation event failed: ${response.statusText}`);
+        }
+
+        return await response.json().catch(() => ({}));
     }
 };

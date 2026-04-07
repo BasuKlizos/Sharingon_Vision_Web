@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import PropTypes from 'prop-types'; // Import PropTypes
+import { useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import './DetectionCanvas.css';
 
 /**
@@ -73,7 +73,7 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
             const filteredDetections = filterOverlappingDetections(detections);
 
             filteredDetections.forEach((detection) => {
-                drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY, renderX, renderY);
+                drawBoundingBox(ctx, detection, scaleX, scaleY, renderX, renderY);
             });
         }
 
@@ -170,7 +170,7 @@ DetectionCanvas.propTypes = {
  * @param {number} scaleX - Horizontal scale factor
  * @param {number} scaleY - Vertical scale factor
  */
-function drawBoundingBox(ctx, detection, cropOffset, scaleX, scaleY, renderX = 0, renderY = 0) {
+function drawBoundingBox(ctx, detection, scaleX, scaleY, renderX = 0, renderY = 0) {
     const { bbox, class_name, confidence } = detection;
 
     if (!bbox) return;
@@ -275,11 +275,6 @@ export function DetectionStats({ detectionFrame, stats }) {
         </div>
     );
 }
-
-DetectionCanvas.propTypes = {
-    videoRef: PropTypes.object.isRequired,
-    detectionFrame: PropTypes.object
-};
 
 DetectionStats.propTypes = {
     detectionFrame: PropTypes.shape({

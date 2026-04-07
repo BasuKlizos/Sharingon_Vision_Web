@@ -50,7 +50,7 @@ export function FaceAnalysisPanel({ faceData }) {
             {statusText}
           </span>
         </div>
-        <div className="stat-line">Pose: <span className="stat-value">{getYawStatus(head_yaw)}</span></div>i
+        <div className="stat-line">Pose: <span className="stat-value">{getYawStatus(head_yaw)}</span></div>
       </div>
     </div>
   );
