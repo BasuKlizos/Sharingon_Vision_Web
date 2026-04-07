@@ -68,6 +68,10 @@ export class WebRTCService {
         return this.detectionManager;
     }
 
+    sendCurrentView(currentView) {
+        return this.detectionManager?.sendCurrentView(currentView) || false;
+    }
+
     stop() {
         if (this.pc) {
             this.pc.close();

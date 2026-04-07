@@ -44,36 +44,35 @@ export function DetectionCanvas({ videoRef, detectionFrame }) {
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Calculate scale factors and offsets based on video vs canvas aspect ratio
+        // Calculate the actual rendered video rectangle inside the canvas.
+        // This must match CSS `object-fit: contain` to keep boxes aligned.
         const videoWidth = cropOffset?.original_width || video.videoWidth;
         const videoHeight = cropOffset?.original_height || video.videoHeight;
 
         if (videoWidth > 0 && videoHeight > 0 && canvasDisplayWidth > 0 && canvasDisplayHeight > 0) {
-            // Direct scale: canvas display size divided by source video dimensions
-            // This handles the 'contain' object-fit properly
-            const scaleX = canvasDisplayWidth / videoWidth;
-            const scaleY = canvasDisplayHeight / videoHeight;
-
-            // For 'contain' object-fit, calculate actual rendered dimensions and offsets
-            const videoRatio = videoWidth / videoHeight;
-            const canvasRatio = canvasDisplayWidth / canvasDisplayHeight;
-
-            let renderX = 0;
-            let renderY = 0;
-
-            if (videoRatio > canvasRatio) {
-                // Video is wider than canvas - pillarboxed (bars on top/bottom)
-                renderY = (canvasDisplayHeight - (canvasDisplayWidth / videoRatio)) / 2;
-            } else {
-                // Video is taller than canvas - letterboxed (bars on sides)
-                renderX = (canvasDisplayWidth - (canvasDisplayHeight * videoRatio)) / 2;
-            }
+            const renderedVideoRect = getRenderedVideoRect(
+                videoWidth,
+                videoHeight,
+                canvasDisplayWidth,
+                canvasDisplayHeight
+            );
+            const scaleX = renderedVideoRect.width / videoWidth;
+            const scaleY = renderedVideoRect.height / videoHeight;
 
             // Apply Basic NMS: Filter out overlapping boxes of the same area
             const filteredDetections = filterOverlappingDetections(detections);
 
             filteredDetections.forEach((detection) => {
-                drawBoundingBox(ctx, detection, scaleX, scaleY, renderX, renderY);
+                drawBoundingBox(
+                    ctx,
+                    detection,
+                    scaleX,
+                    scaleY,
+                    renderedVideoRect.left,
+                    renderedVideoRect.top,
+                    canvas.width,
+                    canvas.height
+                );
             });
         }
 
@@ -126,6 +125,19 @@ function calculateIOU(boxA, boxB) {
     return interArea / (boxAArea + boxBArea - interArea);
 }
 
+function getRenderedVideoRect(videoWidth, videoHeight, containerWidth, containerHeight) {
+    const scale = Math.min(containerWidth / videoWidth, containerHeight / videoHeight);
+    const renderedWidth = videoWidth * scale;
+    const renderedHeight = videoHeight * scale;
+
+    return {
+        left: (containerWidth - renderedWidth) / 2,
+        top: (containerHeight - renderedHeight) / 2,
+        width: renderedWidth,
+        height: renderedHeight
+    };
+}
+
 // Fixes: validate proper YOLO detection data structure
 DetectionCanvas.propTypes = {
     videoRef: PropTypes.shape({
@@ -170,7 +182,16 @@ DetectionCanvas.propTypes = {
  * @param {number} scaleX - Horizontal scale factor
  * @param {number} scaleY - Vertical scale factor
  */
-function drawBoundingBox(ctx, detection, scaleX, scaleY, renderX = 0, renderY = 0) {
+function drawBoundingBox(
+    ctx,
+    detection,
+    scaleX,
+    scaleY,
+    renderX = 0,
+    renderY = 0,
+    canvasWidth = 0,
+    canvasHeight = 0
+) {
     const { bbox, class_name, confidence } = detection;
 
     if (!bbox) return;
@@ -209,12 +230,14 @@ function drawBoundingBox(ctx, detection, scaleX, scaleY, renderX = 0, renderY = 
     const label = `${class_name} ${(confidence * 100).toFixed(0)}%`;
     ctx.font = `bold 14px Arial`;
     const textWidth = ctx.measureText(label).width;
+    const labelX = Math.max(0, Math.min(scaledX1, canvasWidth - textWidth - 10));
+    const labelY = scaledY1 - 20 >= 0 ? scaledY1 - 20 : Math.min(canvasHeight - 20, scaledY1 + 2);
 
     // Draw label background
     ctx.fillStyle = color;
-    ctx.fillRect(scaledX1, scaledY1 - 20, textWidth + 10, 20);
+    ctx.fillRect(labelX, labelY, textWidth + 10, 20);
     ctx.fillStyle = '#000';
-    ctx.fillText(label, scaledX1 + 5, scaledY1 - 5);
+    ctx.fillText(label, labelX + 5, labelY + 15);
 }
 
 function getColorForConfidence(conf) {

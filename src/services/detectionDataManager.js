@@ -95,10 +95,17 @@ export class DetectionDataManager {
                 detection_count: yolo?.detection_count || 0,
                 detections: processedDetections
             },
-            face: face || { alerts: [], faces: [], face_count: 0 },
+            face: face || { alerts: [], faces: [], face_count: 0, current_view: null },
             type: "detection_frame",
             received_at: Date.now()
         };
+
+        if (frame.face?.current_view) {
+            console.log('[Detection] Current view received from data channel', {
+                frameId: frame_id,
+                currentView: frame.face.current_view
+            });
+        }
 
         // 3. Buffer Management (FIFO)
         this.frameBuffer.push(frame);
@@ -150,5 +157,26 @@ export class DetectionDataManager {
 
     clearBuffer() {
         this.frameBuffer = [];
+    }
+
+    sendCurrentView(currentView) {
+        if (!this.isChannelOpen() || !currentView) {
+            return false;
+        }
+
+        try {
+            this.dataChannel.send(JSON.stringify({
+                type: 'current_view',
+                currentView,
+                timestamp: new Date().toISOString()
+            }));
+            console.log('[Detection] Current view sent via WebRTC data channel', {
+                currentView
+            });
+            return true;
+        } catch (error) {
+            console.error('[Detection] Failed to send current view via WebRTC data channel', error);
+            return false;
+        }
     }
 }

@@ -10,6 +10,7 @@ function ensureJsonObject(payload, fallbackMessage) {
 
 export const webrtcApi = {
     async sendOffer(sdp, type) {
+        console.log('[API] Sending offer request');
         const response = await fetch(`${API_BASE_URL}/api/v1/webrtc/offer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -20,7 +21,11 @@ export const webrtcApi = {
             throw new Error(`Signaling failed: ${response.statusText}`);
         }
 
-        return await response.json();
+        const payload = await response.json();
+        console.log('[API] Offer request succeeded', {
+            sessionId: payload?.session_id || null
+        });
+        return payload;
     },
 
     async runLightingPrecheck(frames) {
@@ -44,6 +49,10 @@ export const webrtcApi = {
     },
 
     async saveCalibration(sessionId, boundaries) {
+        console.log('[API] Saving calibration boundaries', {
+            sessionId,
+            boundaries
+        });
         const response = await fetch(`${API_BASE_URL}/api/calibration/save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -57,7 +66,11 @@ export const webrtcApi = {
             throw new Error(`Calibration save failed: ${response.statusText}`);
         }
 
-        return await response.json().catch(() => ({}));
+        const payload = await response.json().catch(() => ({}));
+        console.log('[API] Calibration boundaries saved', {
+            sessionId
+        });
+        return payload;
     },
 
     async sendViolationEvent(sessionId, point, boundaries) {
@@ -78,5 +91,6 @@ export const webrtcApi = {
         }
 
         return await response.json().catch(() => ({}));
-    }
+    },
+
 };

@@ -19,6 +19,8 @@ const PRECHECK_MAX_DARK_RATIO = 0.35;
 const PRECHECK_MAX_BRIGHT_RATIO = 0.25;
 const PRECHECK_DARK_PIXEL_THRESHOLD = 45;
 const PRECHECK_BRIGHT_PIXEL_THRESHOLD = 225;
+const MONITORING_INTERVAL_MS = 500;
+const CURRENT_VIEW_SEND_INTERVAL_MS = 5000;
 const CALIBRATION_CLICKS_PER_TARGET = 5;
 const CALIBRATION_SAMPLE_TARGET = 8;
 
@@ -262,6 +264,7 @@ function App() {
   const [calibrationComplete, setCalibrationComplete] = useState(false);
   const [calibrationError, setCalibrationError] = useState('');
   const [currentGazePoint, setCurrentGazePoint] = useState(null);
+  const [currentUserView, setCurrentUserView] = useState(null);
 
   const localVideoRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -270,7 +273,10 @@ function App() {
   const previewMonitorIntervalRef = useRef(null);
   const previewMonitorInFlightRef = useRef(false);
   const monitoringIntervalRef = useRef(null);
+  const currentViewIntervalRef = useRef(null);
+  const currentViewTimeoutRef = useRef(null);
   const latestGazePointRef = useRef(null);
+  const latestCurrentViewRef = useRef(null);
   const calibrationSamplesRef = useRef([]);
   const calibrationTargetPointsRef = useRef([]);
   const isMountedRef = useRef(false);
@@ -293,6 +299,14 @@ function App() {
       clearInterval(monitoringIntervalRef.current);
       monitoringIntervalRef.current = null;
     }
+    if (currentViewIntervalRef.current) {
+      clearInterval(currentViewIntervalRef.current);
+      currentViewIntervalRef.current = null;
+    }
+    if (currentViewTimeoutRef.current) {
+      clearTimeout(currentViewTimeoutRef.current);
+      currentViewTimeoutRef.current = null;
+    }
   }, []);
 
   const updateStats = useCallback(() => {
@@ -311,6 +325,15 @@ function App() {
         yolo: message,
         face: message.face
       });
+      const nextCurrentView = message.face?.current_view || null;
+      latestCurrentViewRef.current = nextCurrentView;
+      setCurrentUserView(nextCurrentView);
+      if (nextCurrentView) {
+        console.log('[Monitoring] Latest current view updated in app state', {
+          frameId: message.frame_id,
+          currentView: nextCurrentView
+        });
+      }
     }
   }, []);
 
@@ -578,7 +601,39 @@ function App() {
       } catch (error) {
         console.error('Failed to send violation event', error);
       }
-    }, 500);
+    }, MONITORING_INTERVAL_MS);
+
+    const sendCurrentView = () => {
+      const currentView = latestCurrentViewRef.current;
+      if (!activeSessionId || !currentView) {
+        return;
+      }
+
+      console.log('[Monitoring] Sending current view to backend via WebRTC', {
+        sessionId: activeSessionId,
+        sentAt: new Date().toISOString(),
+        intervalMs: CURRENT_VIEW_SEND_INTERVAL_MS,
+        currentView
+      });
+      const sent = webrtc.sendCurrentView(currentView);
+      if (!sent) {
+        console.warn('[Monitoring] Current view send skipped: data channel not ready', {
+          sessionId: activeSessionId,
+          checkedAt: new Date().toISOString()
+        });
+      }
+    };
+
+    console.log('[Monitoring] Current view sender armed', {
+      sessionId: activeSessionId,
+      firstSendInMs: CURRENT_VIEW_SEND_INTERVAL_MS
+    });
+
+    currentViewTimeoutRef.current = globalThis.setTimeout(() => {
+      sendCurrentView();
+      currentViewIntervalRef.current = globalThis.setInterval(sendCurrentView, CURRENT_VIEW_SEND_INTERVAL_MS);
+      currentViewTimeoutRef.current = null;
+    }, CURRENT_VIEW_SEND_INTERVAL_MS);
   }, [stopMonitoring]);
 
   const stopSession = useCallback((options = {}) => {
@@ -614,16 +669,30 @@ function App() {
     setChannelStatus('closed');
     setIsCalling(false);
     setSessionId(null);
+    latestCurrentViewRef.current = null;
+    setCurrentUserView(null);
     setStatus(nextStatus ?? (keepPreview ? 'Ready to start' : 'Disconnected'));
   }, [stopMonitoring, stopPreviewMonitor]);
 
   const startSession = useCallback(async () => {
+    console.log('[Session] Start requested', {
+      cameraReady: Boolean(localStreamRef.current),
+      calibrationComplete,
+      hasBoundaries: Boolean(boundaries),
+      isRunningPrecheck
+    });
+
     if (!localStreamRef.current) {
+      console.warn('[Session] Start blocked: camera is not ready');
       setCalibrationError('Camera is not ready yet.');
       return;
     }
 
     if (!calibrationComplete || !boundaries) {
+      console.warn('[Session] Start blocked: calibration is incomplete', {
+        calibrationComplete,
+        boundaries
+      });
       setCalibrationError('Finish calibration before starting the session.');
       return;
     }
@@ -631,11 +700,14 @@ function App() {
     setCalibrationError('');
 
     const lightingResult = await runLightingPrecheck();
+    console.log('[Session] Final lighting precheck result', lightingResult);
     if (!lightingResult?.ok || lightingResult.status !== 'ok') {
+      console.warn('[Session] Start blocked: final lighting precheck did not pass');
       return;
     }
 
     try {
+      console.log('[Session] Creating WebRTC session and requesting offer/answer');
       setStatus('Connecting...');
       setIsCalling(true);
 
@@ -653,11 +725,19 @@ function App() {
         handleDetectionsReceived
       ));
 
+      console.log('[Session] WebRTC session created', {
+        sessionId: nextSessionId
+      });
       setSessionId(nextSessionId);
+      console.log('[Session] Saving calibration boundaries', boundaries);
       await webrtcApi.saveCalibration(nextSessionId, boundaries);
+      console.log('[Session] Calibration boundaries saved', {
+        sessionId: nextSessionId
+      });
       startMonitoring(nextSessionId, boundaries);
       statsUpdateIntervalRef.current = globalThis.setInterval(updateStats, 500);
     } catch (error) {
+      console.error('[Session] Start failed', error);
       setPrecheckResult(buildFailedPrecheckResult(error, 'session_failed'));
       stopSession({ keepPreview: true, nextStatus: 'Ready to start' });
     }
@@ -665,6 +745,7 @@ function App() {
     boundaries,
     calibrationComplete,
     handleDetectionsReceived,
+    isRunningPrecheck,
     runLightingPrecheck,
     startMonitoring,
     stopSession,
@@ -866,6 +947,11 @@ function App() {
             {boundaries && (
               <span>
                 Safe Zone: {Math.round(boundaries.minX)}, {Math.round(boundaries.minY)} to {Math.round(boundaries.maxX)}, {Math.round(boundaries.maxY)}
+              </span>
+            )}
+            {currentUserView && (
+              <span>
+                Current View: {Math.round(currentUserView.minX)}, {Math.round(currentUserView.minY)} to {Math.round(currentUserView.maxX)}, {Math.round(currentUserView.maxY)}
               </span>
             )}
             {precheckResult?.message && (
