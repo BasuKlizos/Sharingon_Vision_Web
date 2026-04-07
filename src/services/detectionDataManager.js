@@ -59,6 +59,7 @@ export class DetectionDataManager {
                     this.handleUnifiedFrame(data);
                 }
             } catch (error) {
+                console.error(error);
             }
         };
     }
