@@ -23,6 +23,15 @@ const MONITORING_INTERVAL_MS = 500;
 const CURRENT_VIEW_SEND_INTERVAL_MS = 5000;
 const CALIBRATION_CLICKS_PER_TARGET = 5;
 const CALIBRATION_SAMPLE_TARGET = 8;
+const DETECTION_STALE_TIMEOUT_MS = 1000;
+
+function roundTo(value, digits = 2) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  return Number(value.toFixed(digits));
+}
 
 function wait(ms) {
   return new Promise((resolve) => {
@@ -275,8 +284,10 @@ function App() {
   const monitoringIntervalRef = useRef(null);
   const currentViewIntervalRef = useRef(null);
   const currentViewTimeoutRef = useRef(null);
+  const detectionStaleTimeoutRef = useRef(null);
   const latestGazePointRef = useRef(null);
   const latestCurrentViewRef = useRef(null);
+  const latestFaceSnapshotRef = useRef(null);
   const calibrationSamplesRef = useRef([]);
   const calibrationTargetPointsRef = useRef([]);
   const isMountedRef = useRef(false);
@@ -307,6 +318,10 @@ function App() {
       clearTimeout(currentViewTimeoutRef.current);
       currentViewTimeoutRef.current = null;
     }
+    if (detectionStaleTimeoutRef.current) {
+      clearTimeout(detectionStaleTimeoutRef.current);
+      detectionStaleTimeoutRef.current = null;
+    }
   }, []);
 
   const updateStats = useCallback(() => {
@@ -327,7 +342,9 @@ function App() {
       });
       console.log("message",message)
       const nextCurrentView = message.face?.current_view || null;
+      const nextFace = Array.isArray(message.face?.faces) ? message.face.faces[0] || null : null;
       latestCurrentViewRef.current = nextCurrentView;
+      latestFaceSnapshotRef.current = nextFace;
       setCurrentUserView(nextCurrentView);
       if (nextCurrentView) {
         console.log('[Monitoring] Latest current view updated in app state', {
@@ -335,6 +352,21 @@ function App() {
           currentView: nextCurrentView
         });
       }
+
+      if (detectionStaleTimeoutRef.current) {
+        clearTimeout(detectionStaleTimeoutRef.current);
+      }
+
+      detectionStaleTimeoutRef.current = globalThis.setTimeout(() => {
+        setDetections({
+          yolo: null,
+          face: null
+        });
+        latestFaceSnapshotRef.current = null;
+        latestCurrentViewRef.current = null;
+        setCurrentUserView(null);
+        detectionStaleTimeoutRef.current = null;
+      }, DETECTION_STALE_TIMEOUT_MS);
     }
   }, []);
 
@@ -604,9 +636,63 @@ function App() {
       }
     }, MONITORING_INTERVAL_MS);
 
+    const buildCurrentViewPayload = () => {
+      const gazePoint = latestGazePointRef.current;
+      if (!activeSessionId || !gazePoint) {
+        return null;
+      }
+
+      const faceSnapshot = latestFaceSnapshotRef.current;
+
+      return {
+        sessionId: activeSessionId,
+        capturedAt: new Date().toISOString(),
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          minX: 0,
+          minY: 0,
+          maxX: window.innerWidth,
+          maxY: window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY
+        },
+        screen: {
+          width: window.screen?.width || null,
+          height: window.screen?.height || null,
+          availWidth: window.screen?.availWidth || null,
+          availHeight: window.screen?.availHeight || null
+        },
+        gaze: {
+          x: roundTo(gazePoint.x),
+          y: roundTo(gazePoint.y),
+          timestampMs: gazePoint.timestamp || Date.now()
+        },
+        face: faceSnapshot ? {
+          headYaw: roundTo(faceSnapshot.head_yaw),
+          headVelocity: roundTo(faceSnapshot.head_velocity, 4),
+          lookingAway: Boolean(faceSnapshot.looking_away),
+          eyeHeadMismatch: Boolean(faceSnapshot.eye_head_mismatch),
+          eyePx: Array.isArray(faceSnapshot.eye_px)
+            ? faceSnapshot.eye_px.map((value) => roundTo(value))
+            : null,
+          nosePx: Array.isArray(faceSnapshot.nose_px)
+            ? faceSnapshot.nose_px.map((value) => roundTo(value))
+            : null
+        } : null,
+        calibration: activeBoundaries ? {
+          minX: roundTo(activeBoundaries.minX),
+          minY: roundTo(activeBoundaries.minY),
+          maxX: roundTo(activeBoundaries.maxX),
+          maxY: roundTo(activeBoundaries.maxY)
+        } : null
+      };
+    };
+
     const sendCurrentView = () => {
-      const currentView = latestCurrentViewRef.current;
-      if (!activeSessionId || !currentView) {
+      const currentViewPayload = buildCurrentViewPayload();
+      if (!currentViewPayload) {
         return;
       }
 
@@ -614,9 +700,9 @@ function App() {
         sessionId: activeSessionId,
         sentAt: new Date().toISOString(),
         intervalMs: CURRENT_VIEW_SEND_INTERVAL_MS,
-        currentView
+        currentViewPayload
       });
-      const sent = webrtc.sendCurrentView(currentView);
+      const sent = webrtc.sendCurrentView(currentViewPayload);
       if (!sent) {
         console.warn('[Monitoring] Current view send skipped: data channel not ready', {
           sessionId: activeSessionId,
@@ -627,14 +713,11 @@ function App() {
 
     console.log('[Monitoring] Current view sender armed', {
       sessionId: activeSessionId,
-      firstSendInMs: CURRENT_VIEW_SEND_INTERVAL_MS
+      firstSendInMs: 0
     });
 
-    currentViewTimeoutRef.current = globalThis.setTimeout(() => {
-      sendCurrentView();
-      currentViewIntervalRef.current = globalThis.setInterval(sendCurrentView, CURRENT_VIEW_SEND_INTERVAL_MS);
-      currentViewTimeoutRef.current = null;
-    }, CURRENT_VIEW_SEND_INTERVAL_MS);
+    sendCurrentView();
+    currentViewIntervalRef.current = globalThis.setInterval(sendCurrentView, CURRENT_VIEW_SEND_INTERVAL_MS);
   }, [stopMonitoring]);
 
   const stopSession = useCallback((options = {}) => {
@@ -671,6 +754,7 @@ function App() {
     setIsCalling(false);
     setSessionId(null);
     latestCurrentViewRef.current = null;
+    latestFaceSnapshotRef.current = null;
     setCurrentUserView(null);
     setStatus(nextStatus ?? (keepPreview ? 'Ready to start' : 'Disconnected'));
   }, [stopMonitoring, stopPreviewMonitor]);

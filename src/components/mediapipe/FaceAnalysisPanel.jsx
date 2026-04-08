@@ -15,17 +15,18 @@ export function FaceAnalysisPanel({ faceData }) {
     center_counter = 0,
     looking_away = false
   } = face || {};
+  const currentView = faceData.current_view || null;
 
   // New detection counts from backend
   const personCount = faceData.person_count || 0;
   const deviceCount = faceData.device_count || 0;
   const faceCount = faceData.face_count || (hasFace ? faceData.faces.length : 0);
 
-  const getYawStatus = (yaw) => {
+  const getHeadPoseStatus = (yaw) => {
     if (!hasFace && faceCount === 0) return 'No Face Detected';
     const absYaw = Math.abs(yaw || 0);
-    if (absYaw > 0.4) return 'Looking Far Away';
-    if (absYaw > 0.2) return 'Slightly Turned';
+    if (absYaw > 0.4) return yaw > 0 ? 'Strong Right Turn' : 'Strong Left Turn';
+    if (absYaw > 0.2) return yaw > 0 ? 'Slight Right Turn' : 'Slight Left Turn';
     return 'Centered';
   };
 
@@ -50,7 +51,8 @@ export function FaceAnalysisPanel({ faceData }) {
             {statusText}
           </span>
         </div>
-        <div className="stat-line">Pose: <span className="stat-value">{getYawStatus(head_yaw)}</span></div>
+        <div className="stat-line">Head Pose: <span className="stat-value">{getHeadPoseStatus(head_yaw)}</span></div>
+        <div className="stat-line">View Data: <span className="stat-value">{currentView ? 'Present' : 'Missing'}</span></div>
       </div>
     </div>
   );
