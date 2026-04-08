@@ -325,6 +325,7 @@ function App() {
         yolo: message,
         face: message.face
       });
+      console.log("message",message)
       const nextCurrentView = message.face?.current_view || null;
       latestCurrentViewRef.current = nextCurrentView;
       setCurrentUserView(nextCurrentView);
