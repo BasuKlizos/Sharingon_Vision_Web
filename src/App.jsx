@@ -20,9 +20,10 @@ const PRECHECK_MAX_BRIGHT_RATIO = 0.25;
 const PRECHECK_DARK_PIXEL_THRESHOLD = 45;
 const PRECHECK_BRIGHT_PIXEL_THRESHOLD = 225;
 const MONITORING_INTERVAL_MS = 500;
-const CURRENT_VIEW_SEND_INTERVAL_MS = 5000;
 const CALIBRATION_CLICKS_PER_TARGET = 5;
 const CALIBRATION_SAMPLE_TARGET = 8;
+const CURRENT_VIEW_SEND_THROTTLE_MS = 120;
+const GAZE_FAR_AWAY_MARGIN_RATIO = 0.45;
 
 function wait(ms) {
   return new Promise((resolve) => {
@@ -102,6 +103,104 @@ async function capturePrecheckFrames(video, canvas, frameCount) {
 
 function round(value, digits) {
   return Number(value.toFixed(digits));
+}
+
+function getOverflowDistance(value, min, max) {
+  if (value < min) {
+    return min - value;
+  }
+  if (value > max) {
+    return value - max;
+  }
+  return 0;
+}
+
+function buildGazeAssessment(point, boundaries) {
+  if (!point || !boundaries) {
+    return null;
+  }
+
+  const width = Math.max(boundaries.maxX - boundaries.minX, 1);
+  const height = Math.max(boundaries.maxY - boundaries.minY, 1);
+  const referenceSize = Math.max(width, height, 1);
+  const overflowX = getOverflowDistance(point.x, boundaries.minX, boundaries.maxX);
+  const overflowY = getOverflowDistance(point.y, boundaries.minY, boundaries.maxY);
+  const overflowRatio = Math.max(overflowX, overflowY) / referenceSize;
+
+  if (overflowX === 0 && overflowY === 0) {
+    return {
+      status: 'good',
+      driftPercent: 0,
+      drift: { x: 0, y: 0 },
+      message: 'User is looking at the screen'
+    };
+  }
+
+  const isFarAway = overflowRatio >= GAZE_FAR_AWAY_MARGIN_RATIO;
+
+  return {
+    status: isFarAway ? 'far_away' : 'looking_away',
+    driftPercent: round(overflowRatio * 100, 2),
+    drift: {
+      x: round(overflowX, 2),
+      y: round(overflowY, 2)
+    },
+    message: isFarAway
+      ? 'Detected looking far away from the screen'
+      : 'User is looking away from the screen'
+  };
+}
+
+function buildAttentionAssessment(gazeAssessment, faceData) {
+  const primaryFace = faceData?.faces?.[0] || null;
+
+  if (gazeAssessment && gazeAssessment.status !== 'good') {
+    return gazeAssessment;
+  }
+
+  const fallbackState = primaryFace?.attention_state || 'good';
+  const fallbackScore = primaryFace?.attention_score || 0;
+  const fallbackReasons = primaryFace?.attention_reasons || [];
+
+  if (fallbackState === 'far_away') {
+    return {
+      status: 'far_away',
+      driftPercent: round(fallbackScore * 10, 2),
+      drift: { x: 0, y: 0 },
+      message: 'User appears to be looking far away from the screen'
+    };
+  }
+
+  if (fallbackState === 'looking_away') {
+    return {
+      status: 'looking_away',
+      driftPercent: round(Math.max(15, fallbackScore * 10), 2),
+      drift: { x: 0, y: 0 },
+      message: fallbackReasons.length > 0
+        ? `User appears to be looking away from the screen (${fallbackReasons.join(', ')})`
+        : 'User appears to be looking away from the screen'
+    };
+  }
+
+  return gazeAssessment;
+}
+
+function buildDisplayAlerts(alerts, attentionAssessment) {
+  const baseAlerts = (alerts || []).filter((alert) => (
+    alert !== 'LOOKING_AWAY_FROM_SCREEN'
+    && alert !== 'LOOKING_FAR_AWAY_FROM_SCREEN'
+  ));
+
+  if (!attentionAssessment || attentionAssessment.status === 'good') {
+    return baseAlerts;
+  }
+
+  return [
+    ...baseAlerts,
+    attentionAssessment.status === 'far_away'
+      ? 'LOOKING_FAR_AWAY_FROM_SCREEN'
+      : 'LOOKING_AWAY_FROM_SCREEN'
+  ];
 }
 
 function getLightingStatusMessage(status) {
@@ -273,10 +372,10 @@ function App() {
   const previewMonitorIntervalRef = useRef(null);
   const previewMonitorInFlightRef = useRef(false);
   const monitoringIntervalRef = useRef(null);
-  const currentViewIntervalRef = useRef(null);
-  const currentViewTimeoutRef = useRef(null);
   const latestGazePointRef = useRef(null);
   const latestCurrentViewRef = useRef(null);
+  const lastCurrentViewSentAtRef = useRef(0);
+  const lastCurrentViewSignatureRef = useRef('');
   const calibrationSamplesRef = useRef([]);
   const calibrationTargetPointsRef = useRef([]);
   const isMountedRef = useRef(false);
@@ -298,14 +397,6 @@ function App() {
     if (monitoringIntervalRef.current) {
       clearInterval(monitoringIntervalRef.current);
       monitoringIntervalRef.current = null;
-    }
-    if (currentViewIntervalRef.current) {
-      clearInterval(currentViewIntervalRef.current);
-      currentViewIntervalRef.current = null;
-    }
-    if (currentViewTimeoutRef.current) {
-      clearTimeout(currentViewTimeoutRef.current);
-      currentViewTimeoutRef.current = null;
     }
   }, []);
 
@@ -334,6 +425,27 @@ function App() {
           frameId: message.frame_id,
           currentView: nextCurrentView
         });
+
+        const signature = [
+          Math.round(nextCurrentView.minX),
+          Math.round(nextCurrentView.maxX),
+          Math.round(nextCurrentView.minY),
+          Math.round(nextCurrentView.maxY)
+        ].join(':');
+        const now = Date.now();
+        const timeSinceLastSend = now - lastCurrentViewSentAtRef.current;
+        const shouldSendImmediately = (
+          signature !== lastCurrentViewSignatureRef.current
+          || timeSinceLastSend >= CURRENT_VIEW_SEND_THROTTLE_MS
+        );
+
+        if (shouldSendImmediately) {
+          const sent = webrtc.sendCurrentView(nextCurrentView);
+          if (sent) {
+            lastCurrentViewSentAtRef.current = now;
+            lastCurrentViewSignatureRef.current = signature;
+          }
+        }
       }
     }
   }, []);
@@ -603,38 +715,6 @@ function App() {
         console.error('Failed to send violation event', error);
       }
     }, MONITORING_INTERVAL_MS);
-
-    const sendCurrentView = () => {
-      const currentView = latestCurrentViewRef.current;
-      if (!activeSessionId || !currentView) {
-        return;
-      }
-
-      console.log('[Monitoring] Sending current view to backend via WebRTC', {
-        sessionId: activeSessionId,
-        sentAt: new Date().toISOString(),
-        intervalMs: CURRENT_VIEW_SEND_INTERVAL_MS,
-        currentView
-      });
-      const sent = webrtc.sendCurrentView(currentView);
-      if (!sent) {
-        console.warn('[Monitoring] Current view send skipped: data channel not ready', {
-          sessionId: activeSessionId,
-          checkedAt: new Date().toISOString()
-        });
-      }
-    };
-
-    console.log('[Monitoring] Current view sender armed', {
-      sessionId: activeSessionId,
-      firstSendInMs: CURRENT_VIEW_SEND_INTERVAL_MS
-    });
-
-    currentViewTimeoutRef.current = globalThis.setTimeout(() => {
-      sendCurrentView();
-      currentViewIntervalRef.current = globalThis.setInterval(sendCurrentView, CURRENT_VIEW_SEND_INTERVAL_MS);
-      currentViewTimeoutRef.current = null;
-    }, CURRENT_VIEW_SEND_INTERVAL_MS);
   }, [stopMonitoring]);
 
   const stopSession = useCallback((options = {}) => {
@@ -671,6 +751,8 @@ function App() {
     setIsCalling(false);
     setSessionId(null);
     latestCurrentViewRef.current = null;
+    lastCurrentViewSentAtRef.current = 0;
+    lastCurrentViewSignatureRef.current = '';
     setCurrentUserView(null);
     setStatus(nextStatus ?? (keepPreview ? 'Ready to start' : 'Disconnected'));
   }, [stopMonitoring, stopPreviewMonitor]);
@@ -837,10 +919,14 @@ function App() {
   }, [finalizeCalibration, isCollectingCalibrationSamples]);
 
   const clicksForCurrentTarget = calibrationClicks[calibrationStep] || 0;
+  const gazeAssessment = buildGazeAssessment(currentGazePoint, boundaries);
+  const attentionAssessment = buildAttentionAssessment(gazeAssessment, detections.face);
   const faceOverlayData = detections.face
     ? {
         ...detections.face,
-        crop_offset: detections.yolo?.crop_offset || detections.face?.crop_offset
+        crop_offset: detections.yolo?.crop_offset || detections.face?.crop_offset,
+        gaze_assessment: attentionAssessment,
+        alerts: buildDisplayAlerts(detections.face.alerts, attentionAssessment)
       }
     : null;
   const showPrecheckCard = cameraReady && calibrationComplete && !isCalling;

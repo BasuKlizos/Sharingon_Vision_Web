@@ -36,6 +36,8 @@ export function FaceCanvas({ videoRef, data }) {
     }
 
     const cropOffset = faceData?.crop_offset || null;
+    const zoneStatus = faceData?.gaze_assessment?.status || 'good';
+    const isLookingAway = zoneStatus === 'looking_away' || zoneStatus === 'far_away';
 
     if (!faceData) return;
 
@@ -91,7 +93,7 @@ export function FaceCanvas({ videoRef, data }) {
         // 2. Draw Face Center Point
         ctx.beginPath();
         ctx.arc(drawX, drawY, 8, 0, 2 * Math.PI);
-        ctx.fillStyle = face.looking_away ? "#ff4d4d" : "#00ff00";
+        ctx.fillStyle = isLookingAway ? "#ff4d4d" : "#00ff00";
         ctx.shadowBlur = 10;
         ctx.shadowColor = ctx.fillStyle;
         ctx.fill();

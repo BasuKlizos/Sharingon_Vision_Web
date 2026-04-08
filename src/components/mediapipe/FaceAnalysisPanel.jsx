@@ -7,13 +7,16 @@ export function FaceAnalysisPanel({ faceData }) {
   // Extract the first face's metrics if available
   const hasFace = faceData.faces && faceData.faces.length > 0;
   const face = hasFace ? faceData.faces[0] : (faceData.nose_px ? faceData : null);
+  const zoneStatus = faceData.gaze_assessment?.status || 'good';
+  const isLookingAway = zoneStatus === 'looking_away' || zoneStatus === 'far_away';
   const {
     head_yaw = 0,
     head_velocity = 0,
     head_turning = false,
     eye_head_mismatch = false,
     center_counter = 0,
-    looking_away = false
+    attention_state = 'good',
+    attention_score = 0
   } = face || {};
 
   // New detection counts from backend
@@ -29,8 +32,10 @@ export function FaceAnalysisPanel({ faceData }) {
     return 'Centered';
   };
 
-  const statusText = !hasFace ? 'No Face Detected' : (looking_away ? 'Looking Away' : 'Attentive');
-  const statusColor = !hasFace ? '#64748b' : (looking_away ? '#f97316' : '#10b981');
+  const statusText = !hasFace
+    ? 'No Face Detected'
+    : (zoneStatus === 'far_away' ? 'Looking Far Away' : (isLookingAway ? 'Looking Away' : 'Attentive'));
+  const statusColor = !hasFace ? '#64748b' : (isLookingAway ? '#f97316' : '#10b981');
 
   return (
     <div className="face-analysis-panel">
@@ -44,6 +49,10 @@ export function FaceAnalysisPanel({ faceData }) {
         <div className="stat-line">Velocity: <span className="stat-value">{hasFace ? (head_velocity || 0).toFixed(3) : '---'}</span></div>
         <div className="stat-line">Attention: <span className="stat-value">{eye_head_mismatch ? 'Mismatch' : 'Aligned'}</span></div>
         <div className="stat-line">Centered: <span className="stat-value">{center_counter || 0}s</span></div>
+        <div className="stat-line">Fallback: <span className="stat-value">{hasFace ? `${attention_state} (${attention_score})` : '---'}</span></div>
+        {faceData.gaze_assessment && (
+          <div className="stat-line">Drift: <span className="stat-value">{faceData.gaze_assessment.driftPercent}%</span></div>
+        )}
         <div className="stat-line">
           Status: 
           <span className="stat-value status-pill" style={{ backgroundColor: statusColor }}>
