@@ -73,24 +73,4 @@ export const webrtcApi = {
         return payload;
     },
 
-    async sendViolationEvent(sessionId, point, boundaries) {
-        const response = await fetch(`${API_BASE_URL}/api/violation-event`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sessionId,
-                type: 'violation-event',
-                point,
-                boundaries,
-                timestamp: new Date().toISOString()
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Violation event failed: ${response.statusText}`);
-        }
-
-        return await response.json().catch(() => ({}));
-    },
-
 };

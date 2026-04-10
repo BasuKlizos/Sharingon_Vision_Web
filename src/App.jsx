@@ -19,7 +19,6 @@ const PRECHECK_MAX_DARK_RATIO = 0.35;
 const PRECHECK_MAX_BRIGHT_RATIO = 0.25;
 const PRECHECK_DARK_PIXEL_THRESHOLD = 45;
 const PRECHECK_BRIGHT_PIXEL_THRESHOLD = 225;
-const MONITORING_INTERVAL_MS = 500;
 const CALIBRATION_CLICKS_PER_TARGET = 5;
 const CALIBRATION_SAMPLE_TARGET = 8;
 const CURRENT_VIEW_SEND_THROTTLE_MS = 120;
@@ -371,7 +370,6 @@ function App() {
   const captureCanvasRef = useRef(null);
   const previewMonitorIntervalRef = useRef(null);
   const previewMonitorInFlightRef = useRef(false);
-  const monitoringIntervalRef = useRef(null);
   const latestGazePointRef = useRef(null);
   const latestCurrentViewRef = useRef(null);
   const lastCurrentViewSentAtRef = useRef(0);
@@ -391,13 +389,6 @@ function App() {
     }
 
     previewMonitorInFlightRef.current = false;
-  }, []);
-
-  const stopMonitoring = useCallback(() => {
-    if (monitoringIntervalRef.current) {
-      clearInterval(monitoringIntervalRef.current);
-      monitoringIntervalRef.current = null;
-    }
   }, []);
 
   const updateStats = useCallback(() => {
@@ -689,38 +680,9 @@ function App() {
     }
   }, [initializeWebGazer]);
 
-  const startMonitoring = useCallback((activeSessionId, activeBoundaries) => {
-    stopMonitoring();
-
-    monitoringIntervalRef.current = globalThis.setInterval(async () => {
-      const point = latestGazePointRef.current;
-      if (!point || !activeBoundaries || !activeSessionId) {
-        return;
-      }
-
-      const isOutsideBoundary = (
-        point.x < activeBoundaries.minX
-        || point.x > activeBoundaries.maxX
-        || point.y < activeBoundaries.minY
-        || point.y > activeBoundaries.maxY
-      );
-
-      if (!isOutsideBoundary) {
-        return;
-      }
-
-      try {
-        await webrtcApi.sendViolationEvent(activeSessionId, point, activeBoundaries);
-      } catch (error) {
-        console.error('Failed to send violation event', error);
-      }
-    }, MONITORING_INTERVAL_MS);
-  }, [stopMonitoring]);
-
   const stopSession = useCallback((options = {}) => {
     const { keepPreview = true, nextStatus } = options;
 
-    stopMonitoring();
     webrtc.stop();
 
     if (statsUpdateIntervalRef.current) {
@@ -755,7 +717,7 @@ function App() {
     lastCurrentViewSignatureRef.current = '';
     setCurrentUserView(null);
     setStatus(nextStatus ?? (keepPreview ? 'Ready to start' : 'Disconnected'));
-  }, [stopMonitoring, stopPreviewMonitor]);
+  }, [stopPreviewMonitor]);
 
   const startSession = useCallback(async () => {
     console.log('[Session] Start requested', {
@@ -817,7 +779,6 @@ function App() {
       console.log('[Session] Calibration boundaries saved', {
         sessionId: nextSessionId
       });
-      startMonitoring(nextSessionId, boundaries);
       statsUpdateIntervalRef.current = globalThis.setInterval(updateStats, 500);
     } catch (error) {
       console.error('[Session] Start failed', error);
@@ -830,7 +791,6 @@ function App() {
     handleDetectionsReceived,
     isRunningPrecheck,
     runLightingPrecheck,
-    startMonitoring,
     stopSession,
     updateStats
   ]);
