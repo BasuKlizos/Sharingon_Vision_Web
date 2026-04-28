@@ -145,21 +145,16 @@ DetectionCanvas.propTypes = {
     }).isRequired,
     detectionFrame: PropTypes.shape({
         frame_id: PropTypes.number,
-        timestamp: PropTypes.number,
         type: PropTypes.string,
         crop_offset: PropTypes.shape({
             x_offset: PropTypes.number,
             y_offset: PropTypes.number,
             original_width: PropTypes.number,
             original_height: PropTypes.number,
-            cropped_width: PropTypes.number,
-            cropped_height: PropTypes.number,
         }),
         yolo: PropTypes.shape({
-            detection_count: PropTypes.number,
             detections: PropTypes.arrayOf(
                 PropTypes.shape({
-                    class_id: PropTypes.number,
                     class_name: PropTypes.string,
                     confidence: PropTypes.number,
                     bbox: PropTypes.shape({
@@ -254,58 +249,3 @@ function drawFrameInfo(ctx, frame, w, h) {
     ctx.font = '12px monospace';
     ctx.fillText(`ID: ${frame.frame_id}`, 10, h - 10);
 }
-
-/**
- * DetectionStats Component
- */
-export function DetectionStats({ detectionFrame, stats }) {
-    if (!detectionFrame && !stats) {
-        return (
-            <div className="detection-stats no-data">
-                <p>Waiting for detections...</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="detection-stats">
-            <div className="stats-header">
-                <h3>Detection Stats</h3>
-            </div>
-
-            {detectionFrame && (
-                <div className="current-frame">
-                    <div className="stat-row">
-                        <span className="label">Frame ID:</span>
-                        <span className="value">{detectionFrame.frame_id}</span>
-                    </div>
-                    <div className="stat-row">
-                        <span className="label">Objects Detected:</span>
-                        <span className="value highlighted">
-                            {detectionFrame.yolo?.detection_count || 0}
-                        </span>
-                    </div>
-                    <div className="stat-row">
-                        <span className="label">Timestamp:</span>
-                        <span className="value">
-                            {new Date(detectionFrame.timestamp * 1000).toLocaleTimeString()}
-                        </span>
-                    </div>
-                </div>
-            )}
-
-            {/* ... rest of your mapping logic ... */}
-        </div>
-    );
-}
-
-DetectionStats.propTypes = {
-    detectionFrame: PropTypes.shape({
-        frame_id: PropTypes.number,
-        timestamp: PropTypes.number,
-        yolo: PropTypes.shape({
-            detection_count: PropTypes.number
-        })
-    }),
-    stats: PropTypes.object
-};

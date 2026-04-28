@@ -371,7 +371,6 @@ function App() {
   const previewMonitorIntervalRef = useRef(null);
   const previewMonitorInFlightRef = useRef(false);
   const latestGazePointRef = useRef(null);
-  const latestCurrentViewRef = useRef(null);
   const lastCurrentViewSentAtRef = useRef(0);
   const lastCurrentViewSignatureRef = useRef('');
   const calibrationSamplesRef = useRef([]);
@@ -407,16 +406,9 @@ function App() {
         yolo: message,
         face: message.face
       });
-      console.log("message",message)
       const nextCurrentView = message.face?.current_view || null;
-      latestCurrentViewRef.current = nextCurrentView;
       setCurrentUserView(nextCurrentView);
       if (nextCurrentView) {
-        console.log('[Monitoring] Latest current view updated in app state', {
-          frameId: message.frame_id,
-          currentView: nextCurrentView
-        });
-
         const signature = [
           Math.round(nextCurrentView.minX),
           Math.round(nextCurrentView.maxX),
@@ -479,8 +471,8 @@ function App() {
       if (webgazer?.end) {
         webgazer.end();
       }
-    } catch (error) {
-      console.warn('WebGazer cleanup skipped after DOM teardown.', error);
+    } catch {
+      // Ignore teardown cleanup failures from third-party DOM state.
     } finally {
       webgazerReadyRef.current = false;
     }
@@ -712,7 +704,6 @@ function App() {
     setChannelStatus('closed');
     setIsCalling(false);
     setSessionId(null);
-    latestCurrentViewRef.current = null;
     lastCurrentViewSentAtRef.current = 0;
     lastCurrentViewSignatureRef.current = '';
     setCurrentUserView(null);
@@ -720,24 +711,12 @@ function App() {
   }, [stopPreviewMonitor]);
 
   const startSession = useCallback(async () => {
-    console.log('[Session] Start requested', {
-      cameraReady: Boolean(localStreamRef.current),
-      calibrationComplete,
-      hasBoundaries: Boolean(boundaries),
-      isRunningPrecheck
-    });
-
     if (!localStreamRef.current) {
-      console.warn('[Session] Start blocked: camera is not ready');
       setCalibrationError('Camera is not ready yet.');
       return;
     }
 
     if (!calibrationComplete || !boundaries) {
-      console.warn('[Session] Start blocked: calibration is incomplete', {
-        calibrationComplete,
-        boundaries
-      });
       setCalibrationError('Finish calibration before starting the session.');
       return;
     }
@@ -745,14 +724,11 @@ function App() {
     setCalibrationError('');
 
     const lightingResult = await runLightingPrecheck();
-    console.log('[Session] Final lighting precheck result', lightingResult);
     if (!lightingResult?.ok || lightingResult.status !== 'ok') {
-      console.warn('[Session] Start blocked: final lighting precheck did not pass');
       return;
     }
 
     try {
-      console.log('[Session] Creating WebRTC session and requesting offer/answer');
       setStatus('Connecting...');
       setIsCalling(true);
 
@@ -770,18 +746,10 @@ function App() {
         handleDetectionsReceived
       ));
 
-      console.log('[Session] WebRTC session created', {
-        sessionId: nextSessionId
-      });
       setSessionId(nextSessionId);
-      console.log('[Session] Saving calibration boundaries', boundaries);
       await webrtcApi.saveCalibration(nextSessionId, boundaries);
-      console.log('[Session] Calibration boundaries saved', {
-        sessionId: nextSessionId
-      });
       statsUpdateIntervalRef.current = globalThis.setInterval(updateStats, 500);
     } catch (error) {
-      console.error('[Session] Start failed', error);
       setPrecheckResult(buildFailedPrecheckResult(error, 'session_failed'));
       stopSession({ keepPreview: true, nextStatus: 'Ready to start' });
     }
@@ -789,7 +757,6 @@ function App() {
     boundaries,
     calibrationComplete,
     handleDetectionsReceived,
-    isRunningPrecheck,
     runLightingPrecheck,
     stopSession,
     updateStats

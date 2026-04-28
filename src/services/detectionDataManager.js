@@ -5,7 +5,6 @@
 export class DetectionDataManager {
     dataChannel = null;
     onDetectionsReceived = null;
-    frameBuffer = [];
     isOpen = false;
 
     constructor(onDetectionsReceived) {
@@ -64,18 +63,26 @@ export class DetectionDataManager {
         };
     }
 
-    handleUnifiedFrame(data) {
-        // 1. Extract core frame data
-        const { frame_id, timestamp, yolo, face, crop_offset } = data;
+    normalizeDetections(detections) {
+        if (!Array.isArray(detections) || detections.length === 0) {
+            return [];
+        }
 
-        // 2. Map YOLO detections safely
-        const processedDetections = (yolo?.detections || []).map(det => {
-            // Fallback logic: find where the coordinates live
-            // In your JSON, they are in det.bbox
+        const alreadyNormalized = detections.every((detection) => (
+            detection
+            && typeof detection === 'object'
+            && detection.bbox
+            && typeof detection.bbox === 'object'
+        ));
+
+        if (alreadyNormalized) {
+            return detections;
+        }
+
+        return detections.map((det) => {
             const coords = det.bbox || det.bounding_box || det;
 
             return {
-                class_id: det.class_id,
                 class_name: det.class_name,
                 confidence: det.confidence,
                 bbox: {
@@ -86,77 +93,25 @@ export class DetectionDataManager {
                 }
             };
         });
+    }
+
+    handleUnifiedFrame(data) {
+        const { frame_id, yolo, face, crop_offset } = data;
+        const processedDetections = this.normalizeDetections(yolo?.detections);
 
         const frame = {
             frame_id,
-            timestamp,
-            crop_offset: crop_offset || null, // Preserve cropping metadata
+            crop_offset: crop_offset || null,
             yolo: {
-                detection_count: yolo?.detection_count || 0,
                 detections: processedDetections
             },
             face: face || { alerts: [], faces: [], face_count: 0, current_view: null },
-            type: "detection_frame",
-            received_at: Date.now()
+            type: "detection_frame"
         };
 
-        if (frame.face?.current_view) {
-            console.log('[Detection] Current view received from data channel', {
-                frameId: frame_id,
-                currentView: frame.face.current_view
-            });
-        }
-
-        // 3. Buffer Management (FIFO)
-        this.frameBuffer.push(frame);
-        if (this.frameBuffer.length > 30) {
-            this.frameBuffer.shift();
-        }
-
-        // 4. Callback
         if (this.onDetectionsReceived) {
             this.onDetectionsReceived(frame);
         }
-    }
-
-    /**
-     * Statistics helper for the UI
-     */
-    getStats() {
-        if (this.frameBuffer.length === 0) {
-            return { frames_received: 0, total_detections: 0, classes: {} };
-        }
-
-        const allDetections = this.frameBuffer.flatMap(f => f.yolo?.detections || []);
-        const classes = {};
-
-        allDetections.forEach(det => {
-            if (!classes[det.class_name]) {
-                classes[det.class_name] = { count: 0, avg_confidence: 0, confs: [] };
-            }
-            classes[det.class_name].count++;
-            classes[det.class_name].confs.push(det.confidence);
-        });
-
-        Object.keys(classes).forEach(name => {
-            const c = classes[name];
-            c.avg_confidence = c.confs.reduce((a, b) => a + b, 0) / c.confs.length;
-            delete c.confs;
-        });
-
-        return {
-            frames_received: this.frameBuffer.length,
-            total_detections: allDetections.length,
-            classes: classes
-        };
-    }
-
-    getLatestDetections() {
-        return this.frameBuffer.at(-1) ?? null;
-    }
-
-    clearBuffer() {
-        this.frameBuffer = [];
     }
 
     sendCurrentView(currentView) {
@@ -167,12 +122,8 @@ export class DetectionDataManager {
         try {
             this.dataChannel.send(JSON.stringify({
                 type: 'current_view',
-                currentView,
-                timestamp: new Date().toISOString()
-            }));
-            console.log('[Detection] Current view sent via WebRTC data channel', {
                 currentView
-            });
+            }));
             return true;
         } catch (error) {
             console.error('[Detection] Failed to send current view via WebRTC data channel', error);

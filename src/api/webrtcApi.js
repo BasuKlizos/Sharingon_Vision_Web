@@ -10,7 +10,6 @@ function ensureJsonObject(payload, fallbackMessage) {
 
 export const webrtcApi = {
     async sendOffer(sdp, type) {
-        console.log('[API] Sending offer request');
         const response = await fetch(`${API_BASE_URL}/api/v1/webrtc/offer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -22,9 +21,6 @@ export const webrtcApi = {
         }
 
         const payload = await response.json();
-        console.log('[API] Offer request succeeded', {
-            sessionId: payload?.session_id || null
-        });
         return payload;
     },
 
@@ -49,11 +45,7 @@ export const webrtcApi = {
     },
 
     async saveCalibration(sessionId, boundaries) {
-        console.log('[API] Saving calibration boundaries', {
-            sessionId,
-            boundaries
-        });
-        const response = await fetch(`${API_BASE_URL}/api/calibration/save`, {
+        const response = await fetch(`${API_BASE_URL}/api/v1/monitoring/calibration/save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -66,11 +58,7 @@ export const webrtcApi = {
             throw new Error(`Calibration save failed: ${response.statusText}`);
         }
 
-        const payload = await response.json().catch(() => ({}));
-        console.log('[API] Calibration boundaries saved', {
-            sessionId
-        });
-        return payload;
+        return response.json().catch(() => ({}));
     },
 
 };
